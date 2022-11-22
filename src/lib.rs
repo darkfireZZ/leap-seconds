@@ -5,6 +5,25 @@ use {
     thiserror::Error,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DataComponent {
+    LastUpdate,
+    ExpirationDate,
+    Hash,
+}
+
+impl Display for DataComponent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result = match self {
+            Self::LastUpdate => "last update",
+            Self::ExpirationDate => "expiration date",
+            Self::Hash => "hash",
+        };
+
+        write!(f, "{result}")
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ParseFileError {
     #[error(transparent)]
@@ -15,6 +34,14 @@ pub enum ParseFileError {
     InvalidHash {
         calculated: Sha1Hash,
         found: Sha1Hash,
+    },
+    #[error("missing data: {0}")]
+    MissingData(DataComponent),
+    #[error("duplicate data on lines {line1} and {line2}: {data_component}")]
+    DuplicateData {
+        data_component: DataComponent,
+        line1: usize,
+        line2: usize,
     },
 }
 
@@ -47,12 +74,6 @@ struct LeapSecond {
 
 #[derive(Debug, Error)]
 pub enum ParseLineError {
-    #[error("unexpected start of line: expected \"{expected}\", found \"{found}\" on line #{line_number}")]
-    UnexpectedStartOfLine {
-        expected: &'static str,
-        found: String,
-        line_number: usize,
-    },
     #[error("invalid timestamp: \"{timestamp}\" on line #{line_number}")]
     InvalidTimestamp {
         timestamp: String,
@@ -60,9 +81,9 @@ pub enum ParseLineError {
     },
     #[error("invalid hash: \"{0}\"")]
     InvalidHash(String),
-    #[error("invalid content line: \"{content_line}\" on line #{line_number}")]
-    InvalidContentLine {
-        content_line: String,
+    #[error("invalid leap second line: \"{leap_second_line}\" on line #{line_number}")]
+    InvalidLeapSecondLine {
+        leap_second_line: String,
         line_number: usize,
     },
     #[error("invalid TAI difference: \"{0}\"")]
@@ -76,45 +97,32 @@ struct Line {
 }
 
 impl Line {
-    fn is_comment(&self) -> bool {
-        self.content.starts_with('#')
-            && (self.content[1..].starts_with(|c: char| c.is_ascii_whitespace())
-                || self.content.len() == 1)
+    fn kind(&self) -> LineType {
+        if self.content.starts_with('#') {
+            match self.content[1..].chars().next() {
+                Some('$') => LineType::LastUpdate,
+                Some('@') => LineType::ExpirationDate,
+                Some('h') => LineType::Hash,
+                _ => LineType::Comment,
+            }
+        } else {
+            LineType::LeapSecond
+        }
     }
 }
 
-fn validate_start_of_line(
-    line: &Line,
-    expected_start_of_line: &'static str,
-) -> Result<(), ParseLineError> {
-    if line.content.starts_with(expected_start_of_line) {
-        Ok(())
-    } else {
-        Err(ParseLineError::UnexpectedStartOfLine {
-            expected: expected_start_of_line,
-            found: line
-                .content
-                .get(0..2)
-                .or_else(|| line.content.get(0..1))
-                .unwrap_or_else(|| "")
-                .to_owned(),
-            line_number: line.number,
-        })
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LineType {
+    Comment,
+    LastUpdate,
+    ExpirationDate,
+    LeapSecond,
+    Hash,
 }
 
-fn extract_content<'a>(
-    line: &'a Line,
-    expected_start_of_line: &'static str,
-) -> Result<&'a str, ParseLineError> {
-    validate_start_of_line(line, expected_start_of_line)?;
-
-    Ok(&line.content[2..].trim())
+fn extract_content<'a>(line: &'a Line) -> &'a str {
+    line.content[2..].trim()
 }
-
-const LAST_UPDATE_LINE_START: &'static str = "#$";
-const EXPIRE_DATE_LINE_START: &'static str = "#@";
-const HASH_LINE_START: &'static str = "#h";
 
 fn parse_timestamp(timestamp: &str) -> Result<Timestamp, ParseLineError> {
     let timestamp = timestamp
@@ -169,20 +177,20 @@ fn parse_hash(hash: &str) -> Result<Sha1Hash, ParseLineError> {
     Ok(Sha1Hash::from_array(hash))
 }
 
-fn parse_content_lines(lines: &[Line]) -> Result<Vec<(&str, &str)>, ParseLineError> {
+fn parse_leap_second_lines(lines: &[Line]) -> Result<Vec<(&str, &str)>, ParseLineError> {
     lines
         .into_iter()
         .map(|line| {
-            let mut content = line.content.as_str();
-            if let Some(start_of_comment) = content.find('#') {
-                content = &content[..start_of_comment];
+            let mut leap_second = line.content.as_str();
+            if let Some(start_of_comment) = leap_second.find('#') {
+                leap_second = &leap_second[..start_of_comment];
             }
-            let content = content.trim();
+            let leap_second = leap_second.trim();
 
-            content
+            leap_second
                 .split_once(|c: char| c.is_ascii_whitespace())
-                .ok_or_else(|| ParseLineError::InvalidContentLine {
-                    content_line: line.content.clone(),
+                .ok_or_else(|| ParseLineError::InvalidLeapSecondLine {
+                    leap_second_line: line.content.clone(),
                     line_number: line.number,
                 })
         })
@@ -190,16 +198,16 @@ fn parse_content_lines(lines: &[Line]) -> Result<Vec<(&str, &str)>, ParseLineErr
 }
 
 fn calculate_hash<'a>(
-    last_updated: &'a str,
+    last_update: &'a str,
     expiration_date: &'a str,
-    content: &'a [(&'a str, &'a str)],
+    leap_seconds: &'a [(&'a str, &'a str)],
 ) -> Sha1Hash {
     let mut hasher = Sha1::new();
 
-    hasher.update(last_updated.as_bytes());
+    hasher.update(last_update.as_bytes());
     hasher.update(expiration_date.as_bytes());
 
-    for chunk in content.into_iter().flat_map(|(s1, s2)| [s1, s2]) {
+    for chunk in leap_seconds.into_iter().flat_map(|(s1, s2)| [s1, s2]) {
         hasher.update(chunk.as_bytes());
     }
 
@@ -212,8 +220,10 @@ fn parse_tai_diff(tai_diff: &str) -> Result<u16, ParseLineError> {
         .map_err(|_| ParseLineError::InvalidTaiDiff(tai_diff.to_owned()))
 }
 
-fn parse_leap_seconds(content_lines: &[(&str, &str)]) -> Result<Vec<LeapSecond>, ParseLineError> {
-    content_lines
+fn parse_leap_seconds(
+    leap_second_lines: &[(&str, &str)],
+) -> Result<Vec<LeapSecond>, ParseLineError> {
+    leap_second_lines
         .into_iter()
         .map(|(timestamp, tai_diff)| {
             Ok(LeapSecond {
@@ -224,47 +234,98 @@ fn parse_leap_seconds(content_lines: &[(&str, &str)]) -> Result<Vec<LeapSecond>,
         .collect()
 }
 
+// TODO choose better names for everything in this function
+fn set_option(
+    option: &Option<Line>,
+    to: Line,
+    data_component: DataComponent,
+) -> Result<Line, ParseFileError> {
+    if let Some(line) = option {
+        Err(ParseFileError::DuplicateData {
+            data_component,
+            line1: line.number,
+            line2: to.number,
+        })
+    } else {
+        Ok(to)
+    }
+}
+
+fn extract_content_lines<R: BufRead>(file: R) -> Result<ContentLines, ParseFileError> {
+    let mut last_update = None;
+    let mut expiration_date = None;
+    let mut leap_seconds = Vec::new();
+    let mut hash = None;
+
+    let lines = file
+        .lines()
+        .enumerate()
+        .map(|(number, line)| line.map(|content| Line { content, number }));
+
+    for line in lines {
+        let line = line?;
+        match line.kind() {
+            LineType::Comment => continue,
+            LineType::LeapSecond => leap_seconds.push(line),
+            LineType::LastUpdate => {
+                last_update = Some(set_option(&last_update, line, DataComponent::LastUpdate)?);
+            }
+            LineType::ExpirationDate => {
+                expiration_date = Some(set_option(
+                    &expiration_date,
+                    line,
+                    DataComponent::ExpirationDate,
+                )?);
+            }
+            LineType::Hash => {
+                hash = Some(set_option(&hash, line, DataComponent::Hash)?);
+            }
+        }
+    }
+
+    let last_update =
+        last_update.ok_or_else(|| ParseFileError::MissingData(DataComponent::LastUpdate))?;
+    let expiration_date = expiration_date
+        .ok_or_else(|| ParseFileError::MissingData(DataComponent::ExpirationDate))?;
+    let hash = hash.ok_or_else(|| ParseFileError::MissingData(DataComponent::Hash))?;
+
+    Ok(ContentLines {
+        last_update,
+        expiration_date,
+        leap_seconds,
+        hash,
+    })
+}
+
+#[derive(Clone, Debug)]
+struct ContentLines {
+    last_update: Line,
+    expiration_date: Line,
+    hash: Line,
+    leap_seconds: Vec<Line>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Data {
-    last_updated: Timestamp,
+    last_update: Timestamp,
     expiration_date: Timestamp,
     leap_seconds: Vec<LeapSecond>,
 }
 
 pub fn parse_file<R: BufRead>(file: R) -> Result<Data, ParseFileError> {
-    let lines = file
-        .lines()
-        .enumerate()
-        .map(|(number, line)| line.map(|content| Line { content, number }))
-        .filter(|line| match line {
-            Ok(line) => !line.is_comment(),
-            Err(_) => true,
-        })
-        .collect::<io::Result<Vec<_>>>()?;
+    let content_lines = extract_content_lines(file)?;
 
-    let num_lines = lines.len();
+    let last_update = extract_content(&content_lines.last_update);
+    let expiration_date = extract_content(&content_lines.expiration_date);
+    let hash = extract_content(&content_lines.hash);
+    let leap_second_lines = parse_leap_second_lines(&content_lines.leap_seconds)?;
 
-    if num_lines < 3 {
-        todo!("error");
-    }
+    let calculated_hash = calculate_hash(last_update, expiration_date, &leap_second_lines);
 
-    let last_updated_line = &lines[0];
-    let expiration_date_line = &lines[1];
-    let content_lines = &lines[2..num_lines - 1];
-    let hash_line = &lines[num_lines - 1];
-
-    let last_updated = extract_content(last_updated_line, LAST_UPDATE_LINE_START)?;
-    let expiration_date = extract_content(expiration_date_line, EXPIRE_DATE_LINE_START)?;
-    let hash = extract_content(hash_line, HASH_LINE_START)?;
-    let content_lines = parse_content_lines(content_lines)?;
-
-    let calculated_hash = calculate_hash(last_updated, expiration_date, &content_lines);
-
-    let last_updated = parse_timestamp(&last_updated)?;
+    let last_update = parse_timestamp(&last_update)?;
     let expiration_date = parse_timestamp(&expiration_date)?;
     let hash_from_file = parse_hash(&hash)?;
-
-    let leap_seconds = parse_leap_seconds(&content_lines)?;
+    let leap_seconds = parse_leap_seconds(&leap_second_lines)?;
 
     if calculated_hash != hash_from_file {
         return Err(ParseFileError::InvalidHash {
@@ -274,7 +335,7 @@ pub fn parse_file<R: BufRead>(file: R) -> Result<Data, ParseFileError> {
     }
 
     Ok(Data {
-        last_updated,
+        last_update,
         expiration_date,
         leap_seconds,
     })

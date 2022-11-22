@@ -1,8 +1,4 @@
-use {
-    flate2::read::GzDecoder,
-    std::io::BufReader,
-    tar::Archive,
-};
+use {flate2::read::GzDecoder, std::io::BufReader, tar::Archive};
 
 fn main() {
     let tar_gz =
