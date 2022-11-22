@@ -50,6 +50,26 @@ pub struct Timestamp {
     value: u64,
 }
 
+const SECONDS_PER_MINUTE: u64 = 60;
+const MINUTES_PER_HOUR: u64 = 60;
+const HOURS_PER_DAY: u64 = 24;
+
+const SECONDS_PER_HOUR: u64 = MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
+const SECONDS_PER_DAY: u64 = HOURS_PER_DAY * SECONDS_PER_HOUR;
+
+const JANUARY: u64 = 1;
+const FEBRUARY: u64 = 2;
+const MARCH: u64 = 3;
+const APRIL: u64 = 4;
+const MAY: u64 = 5;
+const JUNE: u64 = 6;
+const JULY: u64 = 7;
+const AUGUST: u64 = 8;
+const SEPTEMBER: u64 = 9;
+const OCTOBER: u64 = 10;
+const NOVEMBER: u64 = 11;
+const DECEMBER: u64 = 12;
+
 impl Timestamp {
     pub fn from_u64(value: u64) -> Self {
         Self { value }
@@ -57,6 +77,113 @@ impl Timestamp {
 
     pub fn as_u64(&self) -> u64 {
         self.value
+    }
+
+    pub fn seconds(&self) -> u64 {
+        self.total_seconds() % SECONDS_PER_MINUTE
+    }
+
+    pub fn minutes(&self) -> u64 {
+        self.total_minutes() % MINUTES_PER_HOUR
+    }
+
+    pub fn hours(&self) -> u64 {
+        self.total_hours() % HOURS_PER_DAY
+    }
+
+    pub fn day_of_year(&self) -> u64 {
+        self.year_and_day().1
+    }
+
+    pub fn year(&self) -> u64 {
+        self.year_and_day().0
+    }
+
+    pub fn month(&self) -> u64 {
+        self.month_and_day().0
+    }
+
+    pub fn day_of_month(&self) -> u64 {
+        self.month_and_day().1
+    }
+
+    fn total_seconds(&self) -> u64 {
+        self.value
+    }
+
+    fn total_minutes(&self) -> u64 {
+        self.value / SECONDS_PER_MINUTE
+    }
+
+    fn total_hours(&self) -> u64 {
+        self.value / SECONDS_PER_HOUR
+    }
+
+    fn total_days(&self) -> u64 {
+        self.value / SECONDS_PER_DAY
+    }
+
+    fn is_leap_year(year: u64) -> bool {
+        (year % 4) == 0 && ((year % 100 != 0 || year % 400 == 0))
+    }
+
+    fn days_in_year(year: u64) -> u64 {
+        if Self::is_leap_year(year) {
+            366
+        } else {
+            365
+        }
+    }
+
+    fn year_and_day(&self) -> (u64, u64) {
+        let mut days = self.total_days();
+        let mut year = 1900;
+
+        loop {
+            let days_in_year = Self::days_in_year(year);
+
+            if days_in_year > days {
+                return (year, days + 1);
+            }
+
+            days -= days_in_year;
+            year += 1;
+        }
+    }
+
+    fn days_in_month(month: u64, year: u64) -> u64 {
+        match month {
+            JANUARY => 31,
+            FEBRUARY => if Self::is_leap_year(year) { 29 } else { 28 },
+            MARCH => 31,
+            APRIL => 30,
+            MAY => 31,
+            JUNE => 30,
+            JULY => 31,
+            AUGUST => 31,
+            SEPTEMBER => 30,
+            OCTOBER => 31,
+            NOVEMBER => 30,
+            DECEMBER => 31,
+            _ => unreachable!("invalid month"),
+        }
+    }
+
+    fn month_and_day(&self) -> (u64, u64) {
+        let (year, mut days) = self.year_and_day();
+        days -= 1;
+        let mut month = JANUARY;
+
+        loop {
+            let days_in_month = Self::days_in_month(month, year);
+
+            if days_in_month > days {
+                return (month, days + 1);
+            }
+
+            days -= days_in_month;
+            month += 1;
+        }
     }
 }
 
@@ -407,4 +534,123 @@ pub fn parse_file<R: BufRead>(file: R) -> Result<Data, ParseFileError> {
         expiration_date,
         leap_seconds,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    mod timestamp {
+        use crate::Timestamp;
+
+        #[test]
+        fn from_and_as_u64() {
+            let original = 123456780987654;
+            let result = Timestamp::from_u64(original).as_u64();
+
+            assert_eq!(result, original);
+        }
+
+        #[test]
+        fn test_1900_01_01() {
+            let timestamp = Timestamp::from_u64(0);
+
+            assert_eq!(timestamp.year(), 1900);
+            assert_eq!(timestamp.month(), 1);
+            assert_eq!(timestamp.day_of_month(), 1);
+            assert_eq!(timestamp.hours(), 0);
+            assert_eq!(timestamp.minutes(), 0);
+            assert_eq!(timestamp.seconds(), 0);
+
+            assert_eq!(timestamp.day_of_year(), 1);
+        }
+
+        #[test]
+        fn test_1901_01_07_19_45_33() {
+            let year = 1 * 365 * 24 * 60 * 60;
+            let day = 6 * 24 * 60 * 60;
+            let hours = 19 * 60 * 60;
+            let minutes = 45 * 60;
+            let seconds = 33;
+
+            let timestamp = Timestamp::from_u64(year + day + hours + minutes + seconds);
+
+            assert_eq!(timestamp.year(), 1901);
+            assert_eq!(timestamp.month(), 1);
+            assert_eq!(timestamp.day_of_month(), 7);
+            assert_eq!(timestamp.hours(), 19);
+            assert_eq!(timestamp.minutes(), 45);
+            assert_eq!(timestamp.seconds(), 33);
+
+            assert_eq!(timestamp.day_of_year(), 7);
+        }
+
+        #[test]
+        fn test_1904_02_29_23_59_59() {
+            let year = 4 * 365 * 24 * 60 * 60;
+            let month = 31 * 24 * 60 * 60;
+            let day = 28 * 24 * 60 * 60;
+            let hours = 23 * 60 * 60;
+            let minutes = 59 * 60;
+            let seconds = 59;
+
+            let timestamp = Timestamp::from_u64(year + month + day + hours + minutes + seconds);
+
+            assert_eq!(timestamp.year(), 1904);
+            assert_eq!(timestamp.month(), 2);
+            assert_eq!(timestamp.day_of_month(), 29);
+            assert_eq!(timestamp.hours(), 23);
+            assert_eq!(timestamp.minutes(), 59);
+            assert_eq!(timestamp.seconds(), 59);
+
+            assert_eq!(timestamp.day_of_year(), 60);
+
+            let next_timestamp = Timestamp::from_u64(timestamp.as_u64() + 1);
+
+            assert_eq!(next_timestamp.year(), 1904);
+            assert_eq!(next_timestamp.month(), 3);
+            assert_eq!(next_timestamp.day_of_month(), 1);
+            assert_eq!(next_timestamp.hours(), 0);
+            assert_eq!(next_timestamp.minutes(), 0);
+            assert_eq!(next_timestamp.seconds(), 0);
+
+            assert_eq!(next_timestamp.day_of_year(), 61);
+        }
+
+        #[test]
+        fn test_2023_06_28() {
+            let timestamp = Timestamp::from_u64(3896899200);
+
+            assert_eq!(timestamp.year(), 2023);
+            assert_eq!(timestamp.month(), 6);
+            assert_eq!(timestamp.day_of_month(), 28);
+            assert_eq!(timestamp.hours(), 0);
+            assert_eq!(timestamp.minutes(), 0);
+            assert_eq!(timestamp.seconds(), 0);
+        }
+
+        #[test]
+        fn test_1985_07_01() {
+            let timestamp = Timestamp::from_u64(2698012800);
+
+            assert_eq!(timestamp.year(), 1985);
+            assert_eq!(timestamp.month(), 7);
+            assert_eq!(timestamp.day_of_month(), 1);
+            assert_eq!(timestamp.hours(), 0);
+            assert_eq!(timestamp.minutes(), 0);
+            assert_eq!(timestamp.seconds(), 0);
+        }
+
+        #[test]
+        fn test_2017_01_01() {
+            let timestamp = Timestamp::from_u64(3692217600);
+
+            assert_eq!(timestamp.year(), 2017);
+            assert_eq!(timestamp.month(), 1);
+            assert_eq!(timestamp.day_of_month(), 1);
+            assert_eq!(timestamp.hours(), 0);
+            assert_eq!(timestamp.minutes(), 0);
+            assert_eq!(timestamp.seconds(), 0);
+
+            assert_eq!(timestamp.day_of_year(), 1);
+        }
+    }
 }
