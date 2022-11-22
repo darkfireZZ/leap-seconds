@@ -45,6 +45,9 @@ pub enum ParseFileError {
     },
 }
 
+/// A date and time represented as seconds since 1900-01-01 00:00:00.
+///
+/// [`Timestamp`] is a simple wrapper around a [`u64`] with a couple of convenience functions.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Timestamp {
     value: u64,
@@ -71,38 +74,47 @@ const NOVEMBER: u64 = 11;
 const DECEMBER: u64 = 12;
 
 impl Timestamp {
+    /// Creates a new [`Timestamp`] from a [`u64`].
     pub fn from_u64(value: u64) -> Self {
         Self { value }
     }
 
+    /// Get the integer representation of this [`Timestamp`].
     pub fn as_u64(&self) -> u64 {
         self.value
     }
 
+    /// Extracts the seconds from this [`Timestamp`].
     pub fn seconds(&self) -> u64 {
         self.total_seconds() % SECONDS_PER_MINUTE
     }
 
+    /// Extracts the minutes from this [`Timestamp`].
     pub fn minutes(&self) -> u64 {
         self.total_minutes() % MINUTES_PER_HOUR
     }
 
+    /// Extracts the hours from this [`Timestamp`].
     pub fn hours(&self) -> u64 {
         self.total_hours() % HOURS_PER_DAY
     }
 
+    /// Extracts which day of the year it is from this [`Timestamp`].
     pub fn day_of_year(&self) -> u64 {
         self.year_and_day().1
     }
 
+    /// Extracts the year from this [`Timestamp`].
     pub fn year(&self) -> u64 {
         self.year_and_day().0
     }
 
+    /// Extracts the month from this [`Timestamp`].
     pub fn month(&self) -> u64 {
         self.month_and_day().0
     }
 
+    /// Extracts which day of the month it is from this [`Timestamp`].
     pub fn day_of_month(&self) -> u64 {
         self.month_and_day().1
     }
@@ -124,7 +136,7 @@ impl Timestamp {
     }
 
     fn is_leap_year(year: u64) -> bool {
-        (year % 4) == 0 && ((year % 100 != 0 || year % 400 == 0))
+        (year % 4) == 0 && (year % 100 != 0 || year % 400 == 0)
     }
 
     fn days_in_year(year: u64) -> u64 {
@@ -154,7 +166,13 @@ impl Timestamp {
     fn days_in_month(month: u64, year: u64) -> u64 {
         match month {
             JANUARY => 31,
-            FEBRUARY => if Self::is_leap_year(year) { 29 } else { 28 },
+            FEBRUARY => {
+                if Self::is_leap_year(year) {
+                    29
+                } else {
+                    28
+                }
+            }
             MARCH => 31,
             APRIL => 30,
             MAY => 31,
