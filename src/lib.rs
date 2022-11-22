@@ -73,21 +73,47 @@ struct LeapSecond {
 }
 
 #[derive(Debug, Error)]
-pub enum ParseLineError {
-    #[error("invalid timestamp: \"{timestamp}\" on line #{line_number}")]
-    InvalidTimestamp {
-        timestamp: String,
-        line_number: usize,
-    },
-    #[error("invalid hash: \"{0}\"")]
-    InvalidHash(String),
-    #[error("invalid leap second line: \"{leap_second_line}\" on line #{line_number}")]
-    InvalidLeapSecondLine {
-        leap_second_line: String,
-        line_number: usize,
-    },
-    #[error("invalid TAI difference: \"{0}\"")]
-    InvalidTaiDiff(String),
+pub struct ParseLineError {
+    kind: ParseLineErrorKind,
+    line: String,
+    line_number: usize,
+}
+
+impl ParseLineError {
+    fn new<'a>(kind: ParseLineErrorKind, line: LineBorrow<'a>) -> Self {
+        Self {
+            kind,
+            line: line.content.to_owned(),
+            line_number: line.number,
+        }
+    }
+}
+
+impl Display for ParseLineError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} on line {}: \"{}\"", self.kind, self.line_number, self.line)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParseLineErrorKind {
+    InvalidTimestamp,
+    InvalidLeapSecondLine,
+    InvalidTaiDiff,
+    InvalidHash,
+}
+
+impl Display for ParseLineErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = match self {
+            Self::InvalidTimestamp => "invalid timestamp",
+            Self::InvalidLeapSecondLine => "invalid leapsecond line",
+            Self::InvalidTaiDiff => "invalid TAI difference",
+            Self::InvalidHash => "invalid hash",
+        };
+
+        write!(f, "{output}")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -120,17 +146,31 @@ enum LineType {
     Hash,
 }
 
-fn extract_content<'a>(line: &'a Line) -> &'a str {
-    line.content[2..].trim()
+#[derive(Clone, Copy, Debug)]
+struct LineBorrow<'a> {
+    content: &'a str,
+    number: usize,
 }
 
-fn parse_timestamp(timestamp: &str) -> Result<Timestamp, ParseLineError> {
-    let timestamp = timestamp
-        .parse::<u64>()
-        .map_err(|_| ParseLineError::InvalidTimestamp {
-            timestamp: timestamp.to_owned(),
-            line_number: todo!(),
-        })?;
+impl<'a> From<&'a Line> for LineBorrow<'a> {
+    fn from(line: &'a Line) -> LineBorrow<'a> {
+        LineBorrow {
+            content: &line.content,
+            number: line.number,
+        }
+    }
+}
+
+fn extract_content<'a>(line: &'a Line) -> LineBorrow<'a> {
+    LineBorrow {
+        content: line.content[2..].trim(),
+        number: line.number,
+    }
+}
+
+fn parse_timestamp<'a>(timestamp: LineBorrow<'a>) -> Result<Timestamp, ParseLineError> {
+    let timestamp = timestamp.content.parse::<u64>()
+        .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidTimestamp, timestamp))?;
 
     Ok(Timestamp::from_u64(timestamp))
 }
@@ -157,27 +197,25 @@ impl Display for Sha1Hash {
     }
 }
 
-fn parse_hash(hash: &str) -> Result<Sha1Hash, ParseLineError> {
-    let hash_str = hash;
-
-    let hash = hash
+fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
+    let hash_vec = hash.content
         .split_ascii_whitespace()
         .map(|word| {
             u32::from_str_radix(word, 16)
-                .map_err(|_| ParseLineError::InvalidHash(hash_str.to_owned()))
+                .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidHash, hash))
         })
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flat_map(|word| word.to_be_bytes())
         .collect::<Vec<_>>();
 
-    let hash = TryInto::<[u8; 20]>::try_into(hash)
-        .map_err(|_| ParseLineError::InvalidHash(hash_str.to_owned()))?;
+    let hash = TryInto::<[u8; 20]>::try_into(hash_vec)
+        .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidHash, hash))?;
 
     Ok(Sha1Hash::from_array(hash))
 }
 
-fn parse_leap_second_lines(lines: &[Line]) -> Result<Vec<(&str, &str)>, ParseLineError> {
+fn parse_leap_second_lines<'a>(lines: &'a [Line]) -> Result<Vec<(LineBorrow<'a>, LineBorrow<'a>)>, ParseLineError> {
     lines
         .into_iter()
         .map(|line| {
@@ -187,48 +225,56 @@ fn parse_leap_second_lines(lines: &[Line]) -> Result<Vec<(&str, &str)>, ParseLin
             }
             let leap_second = leap_second.trim();
 
-            leap_second
+            let leap_second = leap_second
                 .split_once(|c: char| c.is_ascii_whitespace())
-                .ok_or_else(|| ParseLineError::InvalidLeapSecondLine {
-                    leap_second_line: line.content.clone(),
-                    line_number: line.number,
-                })
+                .ok_or_else(|| ParseLineError::new(ParseLineErrorKind::InvalidLeapSecondLine, line.into()))?;
+
+            Ok((
+                LineBorrow {
+                    content: leap_second.0,
+                    number: line.number,
+                },
+                LineBorrow {
+                    content: leap_second.1,
+                    number: line.number,
+                },
+            ))
         })
         .collect::<Result<Vec<_>, _>>()
 }
 
 fn calculate_hash<'a>(
-    last_update: &'a str,
-    expiration_date: &'a str,
-    leap_seconds: &'a [(&'a str, &'a str)],
+    last_update: LineBorrow<'a>,
+    expiration_date: LineBorrow<'a>,
+    leap_seconds: &'a [(LineBorrow<'a>, LineBorrow<'a>)],
 ) -> Sha1Hash {
     let mut hasher = Sha1::new();
 
-    hasher.update(last_update.as_bytes());
-    hasher.update(expiration_date.as_bytes());
+    hasher.update(last_update.content.as_bytes());
+    hasher.update(expiration_date.content.as_bytes());
 
     for chunk in leap_seconds.into_iter().flat_map(|(s1, s2)| [s1, s2]) {
-        hasher.update(chunk.as_bytes());
+        hasher.update(chunk.content.as_bytes());
     }
 
     Sha1Hash::from_array(hasher.finalize().into())
 }
 
-fn parse_tai_diff(tai_diff: &str) -> Result<u16, ParseLineError> {
-    tai_diff
+fn parse_tai_diff<'a>(tai_diff: LineBorrow<'a>) -> Result<u16, ParseLineError> {
+    tai_diff.content
         .parse::<u16>()
-        .map_err(|_| ParseLineError::InvalidTaiDiff(tai_diff.to_owned()))
+        .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidTaiDiff, tai_diff))
 }
 
-fn parse_leap_seconds(
-    leap_second_lines: &[(&str, &str)],
+fn parse_leap_seconds<'a>(
+    leap_second_lines: &[(LineBorrow<'a>, LineBorrow<'a>)],
 ) -> Result<Vec<LeapSecond>, ParseLineError> {
     leap_second_lines
         .into_iter()
         .map(|(timestamp, tai_diff)| {
             Ok(LeapSecond {
-                timestamp: parse_timestamp(timestamp)?,
-                tai_diff: parse_tai_diff(tai_diff)?,
+                timestamp: parse_timestamp(*timestamp)?,
+                tai_diff: parse_tai_diff(*tai_diff)?,
             })
         })
         .collect()
@@ -305,6 +351,20 @@ struct ContentLines {
     leap_seconds: Vec<Line>,
 }
 
+impl ContentLines {
+    fn last_update<'a>(&'a self) -> LineBorrow<'a> {
+        extract_content(&self.last_update)
+    }
+
+    fn expiration_date<'a>(&'a self) -> LineBorrow<'a> {
+        extract_content(&self.expiration_date)
+    }
+
+    fn hash<'a>(&'a self) -> LineBorrow<'a> {
+        extract_content(&self.hash)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Data {
     last_update: Timestamp,
@@ -315,16 +375,18 @@ pub struct Data {
 pub fn parse_file<R: BufRead>(file: R) -> Result<Data, ParseFileError> {
     let content_lines = extract_content_lines(file)?;
 
-    let last_update = extract_content(&content_lines.last_update);
-    let expiration_date = extract_content(&content_lines.expiration_date);
-    let hash = extract_content(&content_lines.hash);
+    let last_update = content_lines.last_update();
+    let expiration_date = content_lines.expiration_date();
+    let hash = content_lines.hash();
+
     let leap_second_lines = parse_leap_second_lines(&content_lines.leap_seconds)?;
 
     let calculated_hash = calculate_hash(last_update, expiration_date, &leap_second_lines);
 
-    let last_update = parse_timestamp(&last_update)?;
-    let expiration_date = parse_timestamp(&expiration_date)?;
-    let hash_from_file = parse_hash(&hash)?;
+    let last_update = parse_timestamp(last_update)?;
+    let expiration_date = parse_timestamp(expiration_date)?;
+    let hash_from_file = parse_hash(hash)?;
+
     let leap_seconds = parse_leap_seconds(&leap_second_lines)?;
 
     if calculated_hash != hash_from_file {
