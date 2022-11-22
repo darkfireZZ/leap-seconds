@@ -1,126 +1,281 @@
 use {
-    std::{num::IntErrorKind, str::FromStr},
+    core::fmt::{self, Display},
+    sha1::{Digest, Sha1},
+    std::io::{self, BufRead},
     thiserror::Error,
 };
 
-pub enum Line {
-    Comment(Comment),
-    LeapSecondInfo(LeapSecondInfo),
+#[derive(Debug, Error)]
+pub enum ParseFileError {
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    ParseLineError(#[from] ParseLineError),
+    #[error("incorrect hash: calculated = {calculated}, found = {found}")]
+    InvalidHash {
+        calculated: Sha1Hash,
+        found: Sha1Hash,
+    },
 }
 
-impl FromStr for Line {
-    type Err = ParseTzdbError;
-    fn from_str(line: &str) -> Result<Self, Self::Err> {
-        match line.parse::<Comment>() {
-            Ok(line) => return Ok(Self::Comment(line)),
-            Err(ParseLineError::ParseFailure) => (),
-            Err(ParseLineError::BadFormat(_err)) => return Err(ParseTzdbError::Failed),
-        }
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Timestamp {
+    value: u64,
+}
 
-        match line.parse::<LeapSecondInfo>() {
-            Ok(line) => return Ok(Self::LeapSecondInfo(line)),
-            Err(ParseLineError::ParseFailure) => (),
-            Err(ParseLineError::BadFormat(_err)) => return Err(ParseTzdbError::Failed),
-        }
+impl Timestamp {
+    pub fn from_u64(value: u64) -> Self {
+        Self { value }
+    }
 
-        Err(ParseTzdbError::Failed)
+    pub fn as_u64(&self) -> u64 {
+        self.value
     }
 }
 
-impl From<LeapSecondInfo> for Line {
-    fn from(leap_second_info: LeapSecondInfo) -> Self {
-        Self::LeapSecondInfo(leap_second_info)
+impl Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
-impl From<Comment> for Line {
-    fn from(comment: Comment) -> Self {
-        Self::Comment(comment)
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LeapSecond {
+    timestamp: Timestamp,
+    tai_diff: u16,
+}
+
+#[derive(Debug, Error)]
+pub enum ParseLineError {
+    #[error("unexpected start of line: expected \"{expected}\", found \"{found}\" on line #{line_number}")]
+    UnexpectedStartOfLine {
+        expected: &'static str,
+        found: String,
+        line_number: usize,
+    },
+    #[error("invalid timestamp: \"{timestamp}\" on line #{line_number}")]
+    InvalidTimestamp {
+        timestamp: String,
+        line_number: usize,
+    },
+    #[error("invalid hash: \"{0}\"")]
+    InvalidHash(String),
+    #[error("invalid content line: \"{content_line}\" on line #{line_number}")]
+    InvalidContentLine {
+        content_line: String,
+        line_number: usize,
+    },
+    #[error("invalid TAI difference: \"{0}\"")]
+    InvalidTaiDiff(String),
+}
+
+#[derive(Clone, Debug)]
+struct Line {
+    content: String,
+    number: usize,
+}
+
+impl Line {
+    fn is_comment(&self) -> bool {
+        self.content.starts_with('#')
+            && (self.content[1..].starts_with(|c: char| c.is_ascii_whitespace())
+                || self.content.len() == 1)
     }
 }
 
-pub struct LeapSecondInfo {
-    // TODO make private again
-    // timestamp (in seconds since 1900-01-01)
-    pub timestamp: u64,
-    pub tai_diff: u16,
-}
-
-impl FromStr for LeapSecondInfo {
-    type Err = ParseLineError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let splits = s.split_whitespace().collect::<Vec<_>>();
-
-        if splits.len() < 2 {
-            return Err(ParseLineError::BadFormat(
-                BadFormatError::InvalidLeapSecondInfo,
-            ));
-        }
-
-        let timestamp = splits[0].parse::<u64>().map_err(|err| {
-            if err.kind() == &IntErrorKind::PosOverflow {
-                BadFormatError::TimestampOutOfRange
-            } else {
-                BadFormatError::InvalidLeapSecondInfo
-            }
-        })?;
-        let tai_diff = splits[1].parse::<u16>().map_err(|err| {
-            if err.kind() == &IntErrorKind::PosOverflow {
-                BadFormatError::TaiDiffOutOfRange
-            } else {
-                BadFormatError::InvalidLeapSecondInfo
-            }
-        })?;
-
-        // TODO also validate the rest is valid
-
-        Ok(Self {
-            timestamp,
-            tai_diff,
+fn validate_start_of_line(
+    line: &Line,
+    expected_start_of_line: &'static str,
+) -> Result<(), ParseLineError> {
+    if line.content.starts_with(expected_start_of_line) {
+        Ok(())
+    } else {
+        Err(ParseLineError::UnexpectedStartOfLine {
+            expected: expected_start_of_line,
+            found: line
+                .content
+                .get(0..2)
+                .or_else(|| line.content.get(0..1))
+                .unwrap_or_else(|| "")
+                .to_owned(),
+            line_number: line.number,
         })
     }
 }
 
-pub struct Comment {
-    text: String,
+fn extract_content<'a>(
+    line: &'a Line,
+    expected_start_of_line: &'static str,
+) -> Result<&'a str, ParseLineError> {
+    validate_start_of_line(line, expected_start_of_line)?;
+
+    Ok(&line.content[2..].trim())
 }
 
-impl FromStr for Comment {
-    type Err = ParseLineError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with("#") {
-            Ok(Comment {
-                text: s.get(2..).unwrap_or("").to_owned(),
-            })
-        } else {
-            Err(ParseLineError::ParseFailure)
-        }
+const LAST_UPDATE_LINE_START: &'static str = "#$";
+const EXPIRE_DATE_LINE_START: &'static str = "#@";
+const HASH_LINE_START: &'static str = "#h";
+
+fn parse_timestamp(timestamp: &str) -> Result<Timestamp, ParseLineError> {
+    let timestamp = timestamp
+        .parse::<u64>()
+        .map_err(|_| ParseLineError::InvalidTimestamp {
+            timestamp: timestamp.to_owned(),
+            line_number: todo!(),
+        })?;
+
+    Ok(Timestamp::from_u64(timestamp))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Sha1Hash {
+    value: [u8; 20],
+}
+
+impl Sha1Hash {
+    fn from_array(array: [u8; 20]) -> Self {
+        Self { value: array }
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ParseTzdbError {
-    #[error("failed to parse leap-seconds.list")]
-    Failed,
+impl Display for Sha1Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let to_string = self
+            .value
+            .iter()
+            .map(|byte| format!("{:0>2x}", byte))
+            .collect::<String>();
+        write!(f, "{to_string}")
+    }
 }
 
-// TODO make private
-#[derive(Debug, Error)]
-pub enum ParseLineError {
-    // TODO better message
-    #[error("failed to parse correctly")]
-    ParseFailure,
-    #[error(transparent)]
-    BadFormat(#[from] BadFormatError),
+fn parse_hash(hash: &str) -> Result<Sha1Hash, ParseLineError> {
+    let hash_str = hash;
+
+    let hash = hash
+        .split_ascii_whitespace()
+        .map(|word| {
+            u32::from_str_radix(word, 16)
+                .map_err(|_| ParseLineError::InvalidHash(hash_str.to_owned()))
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flat_map(|word| word.to_be_bytes())
+        .collect::<Vec<_>>();
+
+    let hash = TryInto::<[u8; 20]>::try_into(hash)
+        .map_err(|_| ParseLineError::InvalidHash(hash_str.to_owned()))?;
+
+    Ok(Sha1Hash::from_array(hash))
 }
 
-// TODO make private
-#[derive(Debug, Error)]
-pub enum BadFormatError {
-    #[error("badly formatted leap second info line")]
-    InvalidLeapSecondInfo,
-    #[error("timestamp out of range")]
-    TimestampOutOfRange,
-    #[error("TAI difference out of range")]
-    TaiDiffOutOfRange,
+fn parse_content_lines(lines: &[Line]) -> Result<Vec<(&str, &str)>, ParseLineError> {
+    lines
+        .into_iter()
+        .map(|line| {
+            let mut content = line.content.as_str();
+            if let Some(start_of_comment) = content.find('#') {
+                content = &content[..start_of_comment];
+            }
+            let content = content.trim();
+
+            content
+                .split_once(|c: char| c.is_ascii_whitespace())
+                .ok_or_else(|| ParseLineError::InvalidContentLine {
+                    content_line: line.content.clone(),
+                    line_number: line.number,
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn calculate_hash<'a>(
+    last_updated: &'a str,
+    expiration_date: &'a str,
+    content: &'a [(&'a str, &'a str)],
+) -> Sha1Hash {
+    let mut hasher = Sha1::new();
+
+    hasher.update(last_updated.as_bytes());
+    hasher.update(expiration_date.as_bytes());
+
+    for chunk in content.into_iter().flat_map(|(s1, s2)| [s1, s2]) {
+        hasher.update(chunk.as_bytes());
+    }
+
+    Sha1Hash::from_array(hasher.finalize().into())
+}
+
+fn parse_tai_diff(tai_diff: &str) -> Result<u16, ParseLineError> {
+    tai_diff
+        .parse::<u16>()
+        .map_err(|_| ParseLineError::InvalidTaiDiff(tai_diff.to_owned()))
+}
+
+fn parse_leap_seconds(content_lines: &[(&str, &str)]) -> Result<Vec<LeapSecond>, ParseLineError> {
+    content_lines
+        .into_iter()
+        .map(|(timestamp, tai_diff)| {
+            Ok(LeapSecond {
+                timestamp: parse_timestamp(timestamp)?,
+                tai_diff: parse_tai_diff(tai_diff)?,
+            })
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Data {
+    last_updated: Timestamp,
+    expiration_date: Timestamp,
+    leap_seconds: Vec<LeapSecond>,
+}
+
+pub fn parse_file<R: BufRead>(file: R) -> Result<Data, ParseFileError> {
+    let lines = file
+        .lines()
+        .enumerate()
+        .map(|(number, line)| line.map(|content| Line { content, number }))
+        .filter(|line| match line {
+            Ok(line) => !line.is_comment(),
+            Err(_) => true,
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+
+    let num_lines = lines.len();
+
+    if num_lines < 3 {
+        todo!("error");
+    }
+
+    let last_updated_line = &lines[0];
+    let expiration_date_line = &lines[1];
+    let content_lines = &lines[2..num_lines - 1];
+    let hash_line = &lines[num_lines - 1];
+
+    let last_updated = extract_content(last_updated_line, LAST_UPDATE_LINE_START)?;
+    let expiration_date = extract_content(expiration_date_line, EXPIRE_DATE_LINE_START)?;
+    let hash = extract_content(hash_line, HASH_LINE_START)?;
+    let content_lines = parse_content_lines(content_lines)?;
+
+    let calculated_hash = calculate_hash(last_updated, expiration_date, &content_lines);
+
+    let last_updated = parse_timestamp(&last_updated)?;
+    let expiration_date = parse_timestamp(&expiration_date)?;
+    let hash_from_file = parse_hash(&hash)?;
+
+    let leap_seconds = parse_leap_seconds(&content_lines)?;
+
+    if calculated_hash != hash_from_file {
+        return Err(ParseFileError::InvalidHash {
+            calculated: calculated_hash,
+            found: hash_from_file,
+        });
+    }
+
+    Ok(Data {
+        last_updated,
+        expiration_date,
+        leap_seconds,
+    })
 }
