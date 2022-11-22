@@ -45,14 +45,6 @@ pub enum ParseFileError {
     },
 }
 
-/// A date and time represented as seconds since 1900-01-01 00:00:00.
-///
-/// [`Timestamp`] is a simple wrapper around a [`u64`] with a couple of convenience functions.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Timestamp {
-    value: u64,
-}
-
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
 const HOURS_PER_DAY: u64 = 24;
@@ -72,6 +64,14 @@ const SEPTEMBER: u64 = 9;
 const OCTOBER: u64 = 10;
 const NOVEMBER: u64 = 11;
 const DECEMBER: u64 = 12;
+
+/// A date and time represented as seconds since 1900-01-01 00:00:00.
+///
+/// [`Timestamp`] is a simple wrapper around a [`u64`] with a couple of convenience functions.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Timestamp {
+    value: u64,
+}
 
 impl Timestamp {
     /// Creates a new [`Timestamp`] from a [`u64`].
@@ -208,6 +208,18 @@ impl Timestamp {
 impl Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+impl From<u64> for Timestamp {
+    fn from(timestamp: u64) -> Timestamp {
+        Self::from_u64(timestamp)
+    }
+}
+
+impl From<Timestamp> for u64 {
+    fn from(timestamp: Timestamp) -> u64 {
+        timestamp.as_u64()
     }
 }
 
