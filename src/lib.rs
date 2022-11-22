@@ -79,19 +79,13 @@ pub struct ParseLineError {
     line_number: usize,
 }
 
-impl ParseLineError {
-    fn new<'a>(kind: ParseLineErrorKind, line: LineBorrow<'a>) -> Self {
-        Self {
-            kind,
-            line: line.content.to_owned(),
-            line_number: line.number,
-        }
-    }
-}
-
 impl Display for ParseLineError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} on line {}: \"{}\"", self.kind, self.line_number, self.line)
+        write!(
+            f,
+            "{} on line {}: \"{}\"",
+            self.kind, self.line_number, self.line
+        )
     }
 }
 
@@ -152,15 +146,6 @@ struct LineBorrow<'a> {
     number: usize,
 }
 
-impl<'a> From<&'a Line> for LineBorrow<'a> {
-    fn from(line: &'a Line) -> LineBorrow<'a> {
-        LineBorrow {
-            content: &line.content,
-            number: line.number,
-        }
-    }
-}
-
 fn extract_content<'a>(line: &'a Line) -> LineBorrow<'a> {
     LineBorrow {
         content: line.content[2..].trim(),
@@ -169,8 +154,14 @@ fn extract_content<'a>(line: &'a Line) -> LineBorrow<'a> {
 }
 
 fn parse_timestamp<'a>(timestamp: LineBorrow<'a>) -> Result<Timestamp, ParseLineError> {
-    let timestamp = timestamp.content.parse::<u64>()
-        .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidTimestamp, timestamp))?;
+    let timestamp = timestamp
+        .content
+        .parse::<u64>()
+        .map_err(|_| ParseLineError {
+            kind: ParseLineErrorKind::InvalidTimestamp,
+            line: timestamp.content.to_owned(),
+            line_number: timestamp.number,
+        })?;
 
     Ok(Timestamp::from_u64(timestamp))
 }
@@ -198,24 +189,33 @@ impl Display for Sha1Hash {
 }
 
 fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
-    let hash_vec = hash.content
+    let hash_vec = hash
+        .content
         .split_ascii_whitespace()
         .map(|word| {
-            u32::from_str_radix(word, 16)
-                .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidHash, hash))
+            u32::from_str_radix(word, 16).map_err(|_| ParseLineError {
+                kind: ParseLineErrorKind::InvalidHash,
+                line: hash.content.to_owned(),
+                line_number: hash.number,
+            })
         })
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flat_map(|word| word.to_be_bytes())
         .collect::<Vec<_>>();
 
-    let hash = TryInto::<[u8; 20]>::try_into(hash_vec)
-        .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidHash, hash))?;
+    let hash = TryInto::<[u8; 20]>::try_into(hash_vec).map_err(|_| ParseLineError {
+        kind: ParseLineErrorKind::InvalidHash,
+        line: hash.content.to_owned(),
+        line_number: hash.number,
+    })?;
 
     Ok(Sha1Hash::from_array(hash))
 }
 
-fn parse_leap_second_lines<'a>(lines: &'a [Line]) -> Result<Vec<(LineBorrow<'a>, LineBorrow<'a>)>, ParseLineError> {
+fn parse_leap_second_lines<'a>(
+    lines: &'a [Line],
+) -> Result<Vec<(LineBorrow<'a>, LineBorrow<'a>)>, ParseLineError> {
     lines
         .into_iter()
         .map(|line| {
@@ -227,7 +227,11 @@ fn parse_leap_second_lines<'a>(lines: &'a [Line]) -> Result<Vec<(LineBorrow<'a>,
 
             let leap_second = leap_second
                 .split_once(|c: char| c.is_ascii_whitespace())
-                .ok_or_else(|| ParseLineError::new(ParseLineErrorKind::InvalidLeapSecondLine, line.into()))?;
+                .ok_or_else(|| ParseLineError {
+                    kind: ParseLineErrorKind::InvalidLeapSecondLine,
+                    line: line.content.to_owned(),
+                    line_number: line.number,
+                })?;
 
             Ok((
                 LineBorrow {
@@ -261,9 +265,11 @@ fn calculate_hash<'a>(
 }
 
 fn parse_tai_diff<'a>(tai_diff: LineBorrow<'a>) -> Result<u16, ParseLineError> {
-    tai_diff.content
-        .parse::<u16>()
-        .map_err(|_| ParseLineError::new(ParseLineErrorKind::InvalidTaiDiff, tai_diff))
+    tai_diff.content.parse::<u16>().map_err(|_| ParseLineError {
+        kind: ParseLineErrorKind::InvalidTaiDiff,
+        line: tai_diff.content.to_owned(),
+        line_number: tai_diff.number,
+    })
 }
 
 fn parse_leap_seconds<'a>(
