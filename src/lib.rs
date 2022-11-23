@@ -11,6 +11,12 @@
 //! // assert!(leap_seconds_list.expiration_date() >= );
 //! ```
 
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+// TODO enable these lints
+// #![warn(clippy::cargo)]
+// #![warn(missing_docs)]
+
 use {
     core::fmt::{self, Display},
     sha1::{Digest, Sha1},
@@ -88,63 +94,72 @@ pub struct Timestamp {
 
 impl Timestamp {
     /// Creates a new [`Timestamp`] from a [`u64`].
+    #[must_use]
     pub fn from_u64(value: u64) -> Self {
         Self { value }
     }
 
     /// Get the integer representation of this [`Timestamp`].
-    pub fn as_u64(&self) -> u64 {
+    #[must_use]
+    pub fn as_u64(self) -> u64 {
         self.value
     }
 
     /// Extracts the seconds from this [`Timestamp`].
-    pub fn seconds(&self) -> u64 {
+    #[must_use]
+    pub fn seconds(self) -> u64 {
         self.total_seconds() % SECONDS_PER_MINUTE
     }
 
     /// Extracts the minutes from this [`Timestamp`].
-    pub fn minutes(&self) -> u64 {
+    #[must_use]
+    pub fn minutes(self) -> u64 {
         self.total_minutes() % MINUTES_PER_HOUR
     }
 
     /// Extracts the hours from this [`Timestamp`].
-    pub fn hours(&self) -> u64 {
+    #[must_use]
+    pub fn hours(self) -> u64 {
         self.total_hours() % HOURS_PER_DAY
     }
 
     /// Extracts which day of the year it is from this [`Timestamp`].
-    pub fn day_of_year(&self) -> u64 {
+    #[must_use]
+    pub fn day_of_year(self) -> u64 {
         self.year_and_day().1
     }
 
     /// Extracts the year from this [`Timestamp`].
-    pub fn year(&self) -> u64 {
+    #[must_use]
+    pub fn year(self) -> u64 {
         self.year_and_day().0
     }
 
     /// Extracts the month from this [`Timestamp`].
-    pub fn month(&self) -> u64 {
+    #[must_use]
+    pub fn month(self) -> u64 {
         self.month_and_day().0
     }
 
     /// Extracts which day of the month it is from this [`Timestamp`].
-    pub fn day_of_month(&self) -> u64 {
+    #[must_use]
+    pub fn day_of_month(self) -> u64 {
         self.month_and_day().1
     }
 
-    fn total_seconds(&self) -> u64 {
+    fn total_seconds(self) -> u64 {
         self.value
     }
 
-    fn total_minutes(&self) -> u64 {
+    fn total_minutes(self) -> u64 {
         self.value / SECONDS_PER_MINUTE
     }
 
-    fn total_hours(&self) -> u64 {
+    fn total_hours(self) -> u64 {
         self.value / SECONDS_PER_HOUR
     }
 
-    fn total_days(&self) -> u64 {
+    fn total_days(self) -> u64 {
         self.value / SECONDS_PER_DAY
     }
 
@@ -160,7 +175,7 @@ impl Timestamp {
         }
     }
 
-    fn year_and_day(&self) -> (u64, u64) {
+    fn year_and_day(self) -> (u64, u64) {
         let mut days = self.total_days();
         let mut year = 1900;
 
@@ -178,7 +193,8 @@ impl Timestamp {
 
     fn days_in_month(month: u64, year: u64) -> u64 {
         match month {
-            JANUARY => 31,
+            JANUARY | MARCH | MAY | JULY | AUGUST | OCTOBER | DECEMBER => 31,
+            APRIL | JUNE | SEPTEMBER | NOVEMBER => 30,
             FEBRUARY => {
                 if Self::is_leap_year(year) {
                     29
@@ -186,21 +202,11 @@ impl Timestamp {
                     28
                 }
             }
-            MARCH => 31,
-            APRIL => 30,
-            MAY => 31,
-            JUNE => 30,
-            JULY => 31,
-            AUGUST => 31,
-            SEPTEMBER => 30,
-            OCTOBER => 31,
-            NOVEMBER => 30,
-            DECEMBER => 31,
             _ => unreachable!("invalid month"),
         }
     }
 
-    fn month_and_day(&self) -> (u64, u64) {
+    fn month_and_day(self) -> (u64, u64) {
         let (year, mut days) = self.year_and_day();
         days -= 1;
         let mut month = JANUARY;
@@ -316,14 +322,14 @@ struct LineBorrow<'a> {
     number: usize,
 }
 
-fn extract_content<'a>(line: &'a Line) -> LineBorrow<'a> {
+fn extract_content(line: &Line) -> LineBorrow<'_> {
     LineBorrow {
         content: line.content[2..].trim(),
         number: line.number,
     }
 }
 
-fn parse_timestamp<'a>(timestamp: LineBorrow<'a>) -> Result<Timestamp, ParseLineError> {
+fn parse_timestamp(timestamp: LineBorrow<'_>) -> Result<Timestamp, ParseLineError> {
     let timestamp = timestamp
         .content
         .parse::<u64>()
@@ -352,7 +358,7 @@ impl Display for Sha1Hash {
         let to_string = self
             .value
             .iter()
-            .map(|byte| format!("{:0>2x}", byte))
+            .map(|byte| format!("{byte:0>2x}"))
             .collect::<String>();
         write!(f, "{to_string}")
     }
@@ -371,7 +377,7 @@ fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
         })
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
-        .flat_map(|word| word.to_be_bytes())
+        .flat_map(u32::to_be_bytes)
         .collect::<Vec<_>>();
 
     let hash = TryInto::<[u8; 20]>::try_into(hash_vec).map_err(|_| ParseLineError {
@@ -383,11 +389,11 @@ fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
     Ok(Sha1Hash::from_array(hash))
 }
 
-fn parse_leap_second_lines<'a>(
-    lines: &'a [Line],
-) -> Result<Vec<(LineBorrow<'a>, LineBorrow<'a>)>, ParseLineError> {
+fn parse_leap_second_lines(
+    lines: &[Line],
+) -> Result<Vec<(LineBorrow<'_>, LineBorrow<'_>)>, ParseLineError> {
     lines
-        .into_iter()
+        .iter()
         .map(|line| {
             let mut leap_second = line.content.as_str();
             if let Some(start_of_comment) = leap_second.find('#') {
@@ -399,7 +405,7 @@ fn parse_leap_second_lines<'a>(
                 .split_once(|c: char| c.is_ascii_whitespace())
                 .ok_or_else(|| ParseLineError {
                     kind: ParseLineErrorKind::InvalidLeapSecondLine,
-                    line: line.content.to_owned(),
+                    line: line.content.clone(),
                     line_number: line.number,
                 })?;
 
@@ -427,14 +433,14 @@ fn calculate_hash<'a>(
     hasher.update(last_update.content.as_bytes());
     hasher.update(expiration_date.content.as_bytes());
 
-    for chunk in leap_seconds.into_iter().flat_map(|(s1, s2)| [s1, s2]) {
+    for chunk in leap_seconds.iter().flat_map(|(s1, s2)| [s1, s2]) {
         hasher.update(chunk.content.as_bytes());
     }
 
     Sha1Hash::from_array(hasher.finalize().into())
 }
 
-fn parse_tai_diff<'a>(tai_diff: LineBorrow<'a>) -> Result<u16, ParseLineError> {
+fn parse_tai_diff(tai_diff: LineBorrow<'_>) -> Result<u16, ParseLineError> {
     tai_diff.content.parse::<u16>().map_err(|_| ParseLineError {
         kind: ParseLineErrorKind::InvalidTaiDiff,
         line: tai_diff.content.to_owned(),
@@ -446,7 +452,7 @@ fn parse_leap_seconds<'a>(
     leap_second_lines: &[(LineBorrow<'a>, LineBorrow<'a>)],
 ) -> Result<Vec<LeapSecond>, ParseLineError> {
     leap_second_lines
-        .into_iter()
+        .iter()
         .map(|(timestamp, tai_diff)| {
             Ok(LeapSecond {
                 timestamp: parse_timestamp(*timestamp)?,
@@ -514,8 +520,8 @@ fn extract_content_lines<R: BufRead>(file: R) -> Result<ContentLines, ParseFileE
     Ok(ContentLines {
         last_update,
         expiration_date,
-        leap_seconds,
         hash,
+        leap_seconds,
     })
 }
 
@@ -528,15 +534,15 @@ struct ContentLines {
 }
 
 impl ContentLines {
-    fn last_update<'a>(&'a self) -> LineBorrow<'a> {
+    fn last_update(&self) -> LineBorrow<'_> {
         extract_content(&self.last_update)
     }
 
-    fn expiration_date<'a>(&'a self) -> LineBorrow<'a> {
+    fn expiration_date(&self) -> LineBorrow<'_> {
         extract_content(&self.expiration_date)
     }
 
-    fn hash<'a>(&'a self) -> LineBorrow<'a> {
+    fn hash(&self) -> LineBorrow<'_> {
         extract_content(&self.hash)
     }
 }
@@ -551,7 +557,14 @@ pub struct LeapSecondsList {
     leap_seconds: Vec<LeapSecond>,
 }
 
-impl LeapSecondsList {    /// Parse a `leap-seconds.list` file.
+impl LeapSecondsList {
+    /// Parse a `leap-seconds.list` file.
+    ///
+    /// # Errors
+    ///
+    /// If the given `leap-seconds.list` could not be parsed successfully.
+    ///
+    /// See [`ParseFileError`] for more information on what each error variant means.
     pub fn from_file<R: BufRead>(file: R) -> Result<Self, ParseFileError> {
         let content_lines = extract_content_lines(file)?;
 
@@ -584,21 +597,25 @@ impl LeapSecondsList {    /// Parse a `leap-seconds.list` file.
     }
 
     /// Gets the last time the file was updated.
+    #[must_use]
     pub fn last_update(&self) -> Timestamp {
         self.last_update
     }
 
     /// Gets the expiration date of the file.
+    #[must_use]
     pub fn expiration_date(&self) -> Timestamp {
         self.expiration_date
     }
 
     /// Gets the leap second list from the file.
+    #[must_use]
     pub fn leap_seconds(&self) -> &[LeapSecond] {
         &self.leap_seconds
     }
 
     /// Gets the leap second list from the file.
+    #[must_use]
     pub fn into_leap_seconds(self) -> Vec<LeapSecond> {
         self.leap_seconds
     }
