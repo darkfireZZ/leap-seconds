@@ -1,3 +1,16 @@
+// TODO add module-level documentation
+//! ```
+//! use leap_seconds::LeapSecondsList;
+//! use std::io::BufReader;
+//!
+//! let file = reqwest::blocking::get("https://data.iana.org/time-zones/tzdb/leap-seconds.list")
+//!         .unwrap();
+//! let file = BufReader::new(file);
+//! let leap_seconds_list = LeapSecondsList::from_file(file).unwrap();
+//!
+//! // assert!(leap_seconds_list.expiration_date() >= );
+//! ```
+
 use {
     core::fmt::{self, Display},
     sha1::{Digest, Sha1},
@@ -224,7 +237,7 @@ impl From<Timestamp> for u64 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LeapSecond {
+pub struct LeapSecond {
     timestamp: Timestamp,
     tai_diff: u16,
 }
@@ -528,42 +541,67 @@ impl ContentLines {
     }
 }
 
+/// Provides access to the data in `leap-seconds.list`.
+///
+/// See the [crate-level documentation](crate) for examples.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Data {
+pub struct LeapSecondsList {
     last_update: Timestamp,
     expiration_date: Timestamp,
     leap_seconds: Vec<LeapSecond>,
 }
 
-pub fn parse_file<R: BufRead>(file: R) -> Result<Data, ParseFileError> {
-    let content_lines = extract_content_lines(file)?;
+impl LeapSecondsList {    /// Parse a `leap-seconds.list` file.
+    pub fn from_file<R: BufRead>(file: R) -> Result<Self, ParseFileError> {
+        let content_lines = extract_content_lines(file)?;
 
-    let last_update = content_lines.last_update();
-    let expiration_date = content_lines.expiration_date();
-    let hash = content_lines.hash();
+        let last_update = content_lines.last_update();
+        let expiration_date = content_lines.expiration_date();
+        let hash = content_lines.hash();
 
-    let leap_second_lines = parse_leap_second_lines(&content_lines.leap_seconds)?;
+        let leap_second_lines = parse_leap_second_lines(&content_lines.leap_seconds)?;
 
-    let calculated_hash = calculate_hash(last_update, expiration_date, &leap_second_lines);
+        let calculated_hash = calculate_hash(last_update, expiration_date, &leap_second_lines);
 
-    let last_update = parse_timestamp(last_update)?;
-    let expiration_date = parse_timestamp(expiration_date)?;
-    let hash_from_file = parse_hash(hash)?;
+        let last_update = parse_timestamp(last_update)?;
+        let expiration_date = parse_timestamp(expiration_date)?;
+        let hash_from_file = parse_hash(hash)?;
 
-    let leap_seconds = parse_leap_seconds(&leap_second_lines)?;
+        let leap_seconds = parse_leap_seconds(&leap_second_lines)?;
 
-    if calculated_hash != hash_from_file {
-        return Err(ParseFileError::InvalidHash {
-            calculated: calculated_hash,
-            found: hash_from_file,
-        });
+        if calculated_hash != hash_from_file {
+            return Err(ParseFileError::InvalidHash {
+                calculated: calculated_hash,
+                found: hash_from_file,
+            });
+        }
+
+        Ok(LeapSecondsList {
+            last_update,
+            expiration_date,
+            leap_seconds,
+        })
     }
 
-    Ok(Data {
-        last_update,
-        expiration_date,
-        leap_seconds,
-    })
+    /// Gets the last time the file was updated.
+    pub fn last_update(&self) -> Timestamp {
+        self.last_update
+    }
+
+    /// Gets the expiration date of the file.
+    pub fn expiration_date(&self) -> Timestamp {
+        self.expiration_date
+    }
+
+    /// Gets the leap second list from the file.
+    pub fn leap_seconds(&self) -> &[LeapSecond] {
+        &self.leap_seconds
+    }
+
+    /// Gets the leap second list from the file.
+    pub fn into_leap_seconds(self) -> Vec<LeapSecond> {
+        self.leap_seconds
+    }
 }
 
 #[cfg(test)]
