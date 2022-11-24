@@ -27,7 +27,6 @@
 #![warn(clippy::pedantic)]
 // TODO disallow these lints
 #![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_lossless)]
 // TODO enable these lints
 // #![warn(clippy::cargo)]
 // #![warn(missing_docs)]
@@ -195,10 +194,10 @@ impl Date {
     }
 
     fn seconds_since_1900(self) -> u64 {
-        let mut days = self.day as u64 - 1;
+        let mut days = u64::from(self.day) - 1;
 
         for month in JANUARY..self.month {
-            days += days_in_month(month, self.year) as u64;
+            days += u64::from(days_in_month(month, self.year));
         }
 
         for year in 1900..self.year {
