@@ -437,7 +437,7 @@ impl Timestamp {
         const DAYS_PER_ERA: u64 = 365 * 400 + 100 - 4 + 1;
         const REF_YEAR: u64 = 1900;
         const DIFF: u64 =
-            REF_YEAR * 365 + (REF_YEAR / 400) - (REF_YEAR / 100) + (REF_YEAR / 4) + 1 - 60; // 719468
+            REF_YEAR * 365 + (REF_YEAR / 400) - (REF_YEAR / 100) + (REF_YEAR / 4) + 1 - 60;
 
         let days_since_1900_01_01 = self.total_days();
 
@@ -452,7 +452,7 @@ impl Timestamp {
         let mp = (5 * day_of_year + 2) / 153; // [0, 11]
         #[allow(clippy::cast_possible_truncation)]
         let day = (day_of_year - (153 * mp + 2) / 5 + 1) as u8; // [1, 31]
-        let month = (mp % 12) as u8; // [1, 12]
+        let month = ((mp + 2) % 12) as u8 + 1; // [1, 12]
         let year = year + (month <= 2) as u64;
 
         Date { year, month, day }
@@ -906,9 +906,68 @@ impl LeapSecondsList {
 }
 
 #[cfg(test)]
+mod proptests;
+
+#[cfg(test)]
 mod tests {
     mod timestamp {
         use crate::{Date, DateTime, Time, Timestamp};
+
+        #[test]
+        fn from_and_to_date_time_0() {
+            let timestamp = Timestamp::from_u64(0);
+            let date_time = timestamp.date_time();
+            let expected_date_time = DateTime {
+                date: Date::new(1900, 1, 1).unwrap(),
+                time: Time::new(0, 0, 0).unwrap(),
+            };
+            assert_eq!(date_time, expected_date_time);
+
+            let timestamp_again =
+                Timestamp::from_date_time(date_time).expect("should always be valid");
+            assert_eq!(timestamp_again, timestamp);
+
+            let date_time_again = timestamp_again.date_time();
+            assert_eq!(date_time_again, date_time);
+        }
+
+        #[test]
+        fn from_and_to_date_time_1889385054048000() {
+            let timestamp = Timestamp::from_u64(1889385054048000);
+            let date_time = timestamp.date_time();
+
+            let timestamp_again =
+                Timestamp::from_date_time(date_time).expect("should always be valid");
+            assert_eq!(timestamp_again, timestamp);
+
+            let date_time_again = timestamp_again.date_time();
+            assert_eq!(date_time_again, date_time);
+        }
+
+        #[test]
+        fn from_and_to_date_time_2004317826065173() {
+            let timestamp = Timestamp::from_u64(2004317826065173);
+            let date_time = timestamp.date_time();
+
+            let timestamp_again =
+                Timestamp::from_date_time(date_time).expect("should always be valid");
+            assert_eq!(timestamp_again, timestamp);
+
+            let date_time_again = timestamp_again.date_time();
+            assert_eq!(date_time_again, date_time);
+        }
+
+        #[test]
+        fn from_pre_1900_date_time() {
+            let date_time = DateTime {
+                date: Date::new(1899, 12, 31).unwrap(),
+                time: Time::new(23, 59, 59).unwrap(),
+            };
+
+            let error = Timestamp::from_date_time(date_time);
+
+            assert!(error.is_err());
+        }
 
         #[test]
         fn from_and_as_u64() {
