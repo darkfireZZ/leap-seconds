@@ -8,11 +8,26 @@
 //! let file = BufReader::new(file);
 //! let leap_seconds_list = LeapSecondsList::from_file(file).unwrap();
 //!
-//! // assert!(leap_seconds_list.expiration_date() >= );
+//! # use leap_seconds::Timestamp;
+//! #
+//! # let min_expiration_date = Timestamp::from_u64(3896899200);
+//! # assert!(leap_seconds_list.expiration_date() >= min_expiration_date);
+//! #
+//! # let min_last_update = Timestamp::from_u64(3676924800);
+//! # assert!(leap_seconds_list.last_update() >= min_last_update);
+//! #
+//! # let first_leap_second = &leap_seconds_list.leap_seconds()[0];
+//! # let expected_timestamp = Timestamp::from_u64(2272060800);
+//! # let expected_tai_diff = 10;
+//! # assert_eq!(first_leap_second.timestamp(), expected_timestamp);
+//! # assert_eq!(first_leap_second.tai_diff(), expected_tai_diff);
 //! ```
 
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
+// TODO disallow these lints
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_lossless)]
 // TODO enable these lints
 // #![warn(clippy::cargo)]
 // #![warn(missing_docs)]
@@ -71,18 +86,279 @@ const HOURS_PER_DAY: u64 = 24;
 const SECONDS_PER_HOUR: u64 = MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
 const SECONDS_PER_DAY: u64 = HOURS_PER_DAY * SECONDS_PER_HOUR;
 
-const JANUARY: u64 = 1;
-const FEBRUARY: u64 = 2;
-const MARCH: u64 = 3;
-const APRIL: u64 = 4;
-const MAY: u64 = 5;
-const JUNE: u64 = 6;
-const JULY: u64 = 7;
-const AUGUST: u64 = 8;
-const SEPTEMBER: u64 = 9;
-const OCTOBER: u64 = 10;
-const NOVEMBER: u64 = 11;
-const DECEMBER: u64 = 12;
+const JANUARY: u8 = 1;
+const FEBRUARY: u8 = 2;
+const MARCH: u8 = 3;
+const APRIL: u8 = 4;
+const MAY: u8 = 5;
+const JUNE: u8 = 6;
+const JULY: u8 = 7;
+const AUGUST: u8 = 8;
+const SEPTEMBER: u8 = 9;
+const OCTOBER: u8 = 10;
+const NOVEMBER: u8 = 11;
+const DECEMBER: u8 = 12;
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum InvalidDate {
+    #[error("day out of range: {0}")]
+    MonthOutOfRange(u8),
+    #[error("month out of range: {0}")]
+    DayOutOfRange(u8),
+}
+
+/// A date.
+///
+/// Is limited to years `>= 0`.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Date {
+    year: u64,
+    month: u8,
+    day: u8,
+}
+
+impl Date {
+    /// Creates a new [`Date`].
+    ///
+    /// ```
+    /// # use leap_seconds::{Date, InvalidDate};
+    /// #
+    /// let _ = Date::new(2003, 03, 30)?;
+    /// #
+    /// # Ok::<(), InvalidDate>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fails if the given date is invalid.
+    ///
+    /// ```
+    /// # use leap_seconds::Date;
+    /// #
+    /// // The year 7_777_777 is not a leap year
+    /// let error = Date::new(7_777_777, 2, 29);
+    /// assert!(error.is_err());
+    /// ```
+    pub fn new(year: u64, month: u8, day: u8) -> Result<Self, InvalidDate> {
+        if !(1..=12).contains(&month) {
+            Err(InvalidDate::MonthOutOfRange(month))
+        } else if day < 1 || day > days_in_month(month, year) {
+            Err(InvalidDate::DayOutOfRange(day))
+        } else {
+            Ok(Date { year, month, day })
+        }
+    }
+
+    /// Gets the day of this [`Date`].
+    ///
+    /// ```
+    /// # use leap_seconds::{Date, InvalidDate};
+    /// #
+    /// let date = Date::new(1977, 5, 25)?;
+    /// assert_eq!(date.day(), 25);
+    /// #
+    /// # Ok::<(), InvalidDate>(())
+    /// ```
+    #[must_use]
+    pub const fn day(self) -> u8 {
+        self.day
+    }
+
+    /// Gets the month of this [`Date`].
+    ///
+    /// ```
+    /// # use leap_seconds::{Date, InvalidDate};
+    /// #
+    /// let date = Date::new(1980, 5, 21)?;
+    /// assert_eq!(date.month(), 5);
+    /// #
+    /// # Ok::<(), InvalidDate>(())
+    /// ```
+    #[must_use]
+    pub const fn month(self) -> u8 {
+        self.month
+    }
+
+    /// Gets the year of this [`Date`].
+    ///
+    /// ```
+    /// # use leap_seconds::{Date, InvalidDate};
+    /// #
+    /// let date = Date::new(1983, 5, 25)?;
+    /// assert_eq!(date.year(), 1983);
+    /// #
+    /// # Ok::<(), InvalidDate>(())
+    /// ```
+    #[must_use]
+    pub const fn year(self) -> u64 {
+        self.year
+    }
+
+    fn seconds_since_1900(self) -> u64 {
+        let mut days = self.day as u64 - 1;
+
+        for month in JANUARY..self.month {
+            days += days_in_month(month, self.year) as u64;
+        }
+
+        for year in 1900..self.year {
+            days += days_in_year(year);
+        }
+
+        days * SECONDS_PER_DAY
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum InvalidTime {
+    #[error("hours out of range: {0}")]
+    HoursOutOfRange(u8),
+    #[error("minutes out of range: {0}")]
+    MinutesOutOfRange(u8),
+    #[error("seconds out of range: {0}")]
+    SecondsOutOfRange(u8),
+}
+
+/// A time.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Time {
+    hours: u8,
+    minutes: u8,
+    seconds: u8,
+}
+
+impl Time {
+    /// Create a new [`Time`].
+    ///
+    /// ```
+    /// # use leap_seconds::{InvalidTime, Time};
+    /// #
+    /// // 15:03:42
+    /// let _ = Time::new(15, 3, 42)?;
+    /// #
+    /// # Ok::<(), InvalidTime>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fails if the given time is invalid.
+    ///
+    /// ```
+    /// # use leap_seconds::Time;
+    /// #
+    /// let error = Time::new(23, 60, 15);
+    /// assert!(error.is_err());
+    /// ```
+    pub fn new(hours: u8, minutes: u8, seconds: u8) -> Result<Self, InvalidTime> {
+        if hours >= (HOURS_PER_DAY as u8) {
+            Err(InvalidTime::HoursOutOfRange(hours))
+        } else if minutes >= (MINUTES_PER_HOUR as u8) {
+            Err(InvalidTime::MinutesOutOfRange(minutes))
+        } else if seconds >= (SECONDS_PER_MINUTE as u8) {
+            Err(InvalidTime::SecondsOutOfRange(seconds))
+        } else {
+            Ok(Time {
+                hours,
+                minutes,
+                seconds,
+            })
+        }
+    }
+
+    /// Gets the hours of this [`Time`].
+    ///
+    /// ```
+    /// # use leap_seconds::{InvalidTime, Time};
+    /// #
+    /// let time = Time::new(13, 17, 29)?;
+    /// assert_eq!(time.hours(), 13);
+    /// #
+    /// # Ok::<(), InvalidTime>(())
+    /// ```
+    #[must_use]
+    pub const fn hours(self) -> u8 {
+        self.hours
+    }
+
+    /// Gets the minutes of this [`Time`].
+    ///
+    /// ```
+    /// # use leap_seconds::{InvalidTime, Time};
+    /// #
+    /// let time = Time::new(13, 17, 29)?;
+    /// assert_eq!(time.minutes(), 17);
+    /// #
+    /// # Ok::<(), InvalidTime>(())
+    /// ```
+    #[must_use]
+    pub const fn minutes(self) -> u8 {
+        self.minutes
+    }
+
+    /// Gets the seconds of this [`Time`].
+    ///
+    /// ```
+    /// # use leap_seconds::{InvalidTime, Time};
+    /// #
+    /// let time = Time::new(13, 17, 29)?;
+    /// assert_eq!(time.seconds(), 29);
+    /// #
+    /// # Ok::<(), InvalidTime>(())
+    /// ```
+    #[must_use]
+    pub const fn seconds(self) -> u8 {
+        self.seconds
+    }
+
+    const fn total_seconds(self) -> u64 {
+        (self.hours as u64) * SECONDS_PER_HOUR
+            + (self.minutes as u64) * SECONDS_PER_MINUTE
+            + (self.seconds as u64)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DateTime {
+    pub date: Date,
+    pub time: Time,
+}
+
+const fn is_leap_year(year: u64) -> bool {
+    (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))
+}
+
+const fn days_in_year(year: u64) -> u64 {
+    if is_leap_year(year) {
+        366
+    } else {
+        365
+    }
+}
+
+const fn days_in_month(month: u8, year: u64) -> u8 {
+    match month {
+        JANUARY | MARCH | MAY | JULY | AUGUST | OCTOBER | DECEMBER => 31,
+        APRIL | JUNE | SEPTEMBER | NOVEMBER => 30,
+        FEBRUARY => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
+        // TODO this is terrible code, improve this
+        _ => u8::MAX, // _ => unreachable!("invalid month")
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub struct DateTimeNotRepresentable(DateTime);
+
+impl Display for DateTimeNotRepresentable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DateTime is not representable as 64-bit timestamp")
+    }
+}
 
 /// A date and time represented as seconds since 1900-01-01 00:00:00.
 ///
@@ -93,134 +369,123 @@ pub struct Timestamp {
 }
 
 impl Timestamp {
+    pub const MAX_REPRESENTABLE_DATE_TIME: DateTime = Self::from_u64(u64::MAX).date_time();
+    pub const MIN_REPRESENTABLE_DATE_TIME: DateTime = Self::from_u64(0).date_time();
+
+    /// Creates a new [`Timestamp`] from a [`DateTime`].
+    ///
+    /// # Errors
+    ///
+    /// Fails if the [`DateTime`] is not representable as a [`Timestamp`].
+    ///
+    /// ```
+    /// use leap_seconds::{Date, DateTime, Time, Timestamp};
+    ///
+    /// let error = Timestamp::from_date_time(DateTime {
+    ///     date: Date::new(1899, 1, 1).expect("valid date"),
+    ///     time: Time::new(12, 0, 0).expect("valid time"),
+    /// });
+    ///
+    /// assert!(error.is_err());
+    /// ```
+    pub fn from_date_time(date_time: DateTime) -> Result<Self, DateTimeNotRepresentable> {
+        if (date_time >= Self::MIN_REPRESENTABLE_DATE_TIME)
+            && (date_time <= Self::MAX_REPRESENTABLE_DATE_TIME)
+        {
+            Ok(Timestamp::from_u64(
+                date_time.date.seconds_since_1900() + date_time.time.total_seconds(),
+            ))
+        } else {
+            Err(DateTimeNotRepresentable(date_time))
+        }
+    }
+
     /// Creates a new [`Timestamp`] from a [`u64`].
     #[must_use]
-    pub fn from_u64(value: u64) -> Self {
+    pub const fn from_u64(value: u64) -> Self {
         Self { value }
     }
 
-    /// Get the integer representation of this [`Timestamp`].
+    /// Gets the integer representation of this [`Timestamp`].
     #[must_use]
-    pub fn as_u64(self) -> u64 {
+    pub const fn as_u64(self) -> u64 {
         self.value
     }
 
-    /// Extracts the seconds from this [`Timestamp`].
+    /// Gets the date and time of this [`Timestamp`].
     #[must_use]
-    pub fn seconds(self) -> u64 {
-        self.total_seconds() % SECONDS_PER_MINUTE
+    pub const fn date_time(self) -> DateTime {
+        DateTime {
+            date: self.date(),
+            time: self.time(),
+        }
     }
 
-    /// Extracts the minutes from this [`Timestamp`].
+    /// Gets the time of this [`Timestamp`].
     #[must_use]
-    pub fn minutes(self) -> u64 {
-        self.total_minutes() % MINUTES_PER_HOUR
+    pub const fn time(self) -> Time {
+        Time {
+            hours: self.hours(),
+            minutes: self.minutes(),
+            seconds: self.seconds(),
+        }
     }
 
-    /// Extracts the hours from this [`Timestamp`].
+    /// Gets the date of this [`Timestamp`].
     #[must_use]
-    pub fn hours(self) -> u64 {
-        self.total_hours() % HOURS_PER_DAY
+    pub const fn date(self) -> Date {
+        // Credits to Howard Hinnant for the algorithm:
+        // https://howardhinnant.github.io/date_algorithms.html (last accessed 2022-11-24)
+
+        const DAYS_PER_ERA: u64 = 365 * 400 + 100 - 4 + 1;
+        const REF_YEAR: u64 = 1900;
+        const DIFF: u64 =
+            REF_YEAR * 365 + (REF_YEAR / 400) - (REF_YEAR / 100) + (REF_YEAR / 4) + 1 - 60; // 719468
+
+        let days_since_1900_01_01 = self.total_days();
+
+        let days_since_0000_03_01 = days_since_1900_01_01 + DIFF;
+        let era = days_since_0000_03_01 / DAYS_PER_ERA;
+        let day_of_era = days_since_0000_03_01 % DAYS_PER_ERA; // [0, 146096]
+        let year_of_era =
+            (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146_096) / 365; // [0, 399]
+        let year = year_of_era + era * 400;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100); // [0, 365]
+
+        let mp = (5 * day_of_year + 2) / 153; // [0, 11]
+        let day = (day_of_year - (153 * mp + 2) / 5 + 1) as u8; // [1, 31]
+        let month = (mp % 12) as u8; // [1, 12]
+        let year = year + (month <= 2) as u64;
+
+        Date { year, month, day }
     }
 
-    /// Extracts which day of the year it is from this [`Timestamp`].
-    #[must_use]
-    pub fn day_of_year(self) -> u64 {
-        self.year_and_day().1
+    const fn hours(self) -> u8 {
+        (self.total_hours() % HOURS_PER_DAY) as u8
     }
 
-    /// Extracts the year from this [`Timestamp`].
-    #[must_use]
-    pub fn year(self) -> u64 {
-        self.year_and_day().0
+    const fn minutes(self) -> u8 {
+        (self.total_minutes() % MINUTES_PER_HOUR) as u8
     }
 
-    /// Extracts the month from this [`Timestamp`].
-    #[must_use]
-    pub fn month(self) -> u64 {
-        self.month_and_day().0
+    const fn seconds(self) -> u8 {
+        (self.total_seconds() % SECONDS_PER_MINUTE) as u8
     }
 
-    /// Extracts which day of the month it is from this [`Timestamp`].
-    #[must_use]
-    pub fn day_of_month(self) -> u64 {
-        self.month_and_day().1
-    }
-
-    fn total_seconds(self) -> u64 {
+    const fn total_seconds(self) -> u64 {
         self.value
     }
 
-    fn total_minutes(self) -> u64 {
+    const fn total_minutes(self) -> u64 {
         self.value / SECONDS_PER_MINUTE
     }
 
-    fn total_hours(self) -> u64 {
+    const fn total_hours(self) -> u64 {
         self.value / SECONDS_PER_HOUR
     }
 
-    fn total_days(self) -> u64 {
+    const fn total_days(self) -> u64 {
         self.value / SECONDS_PER_DAY
-    }
-
-    fn is_leap_year(year: u64) -> bool {
-        (year % 4) == 0 && (year % 100 != 0 || year % 400 == 0)
-    }
-
-    fn days_in_year(year: u64) -> u64 {
-        if Self::is_leap_year(year) {
-            366
-        } else {
-            365
-        }
-    }
-
-    fn year_and_day(self) -> (u64, u64) {
-        let mut days = self.total_days();
-        let mut year = 1900;
-
-        loop {
-            let days_in_year = Self::days_in_year(year);
-
-            if days_in_year > days {
-                return (year, days + 1);
-            }
-
-            days -= days_in_year;
-            year += 1;
-        }
-    }
-
-    fn days_in_month(month: u64, year: u64) -> u64 {
-        match month {
-            JANUARY | MARCH | MAY | JULY | AUGUST | OCTOBER | DECEMBER => 31,
-            APRIL | JUNE | SEPTEMBER | NOVEMBER => 30,
-            FEBRUARY => {
-                if Self::is_leap_year(year) {
-                    29
-                } else {
-                    28
-                }
-            }
-            _ => unreachable!("invalid month"),
-        }
-    }
-
-    fn month_and_day(self) -> (u64, u64) {
-        let (year, mut days) = self.year_and_day();
-        days -= 1;
-        let mut month = JANUARY;
-
-        loop {
-            let days_in_month = Self::days_in_month(month, year);
-
-            if days_in_month > days {
-                return (month, days + 1);
-            }
-
-            days -= days_in_month;
-            month += 1;
-        }
     }
 }
 
@@ -242,10 +507,22 @@ impl From<Timestamp> for u64 {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeapSecond {
     timestamp: Timestamp,
     tai_diff: u16,
+}
+
+impl LeapSecond {
+    #[must_use]
+    pub const fn timestamp(self) -> Timestamp {
+        self.timestamp
+    }
+
+    #[must_use]
+    pub const fn tai_diff(self) -> u16 {
+        self.tai_diff
+    }
 }
 
 #[derive(Debug, Error)]
@@ -624,7 +901,7 @@ impl LeapSecondsList {
 #[cfg(test)]
 mod tests {
     mod timestamp {
-        use crate::Timestamp;
+        use crate::{Date, DateTime, Time, Timestamp};
 
         #[test]
         fn from_and_as_u64() {
@@ -636,16 +913,14 @@ mod tests {
 
         #[test]
         fn test_1900_01_01() {
-            let timestamp = Timestamp::from_u64(0);
+            let expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(1900, 1, 1).unwrap(),
+                time: Time::new(0, 0, 0).unwrap(),
+            })
+            .unwrap();
+            let actual = Timestamp::from_u64(0);
 
-            assert_eq!(timestamp.year(), 1900);
-            assert_eq!(timestamp.month(), 1);
-            assert_eq!(timestamp.day_of_month(), 1);
-            assert_eq!(timestamp.hours(), 0);
-            assert_eq!(timestamp.minutes(), 0);
-            assert_eq!(timestamp.seconds(), 0);
-
-            assert_eq!(timestamp.day_of_year(), 1);
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -656,16 +931,14 @@ mod tests {
             let minutes = 45 * 60;
             let seconds = 33;
 
-            let timestamp = Timestamp::from_u64(year + day + hours + minutes + seconds);
+            let expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(1901, 1, 7).unwrap(),
+                time: Time::new(19, 45, 33).unwrap(),
+            })
+            .unwrap();
+            let actual = Timestamp::from_u64(year + day + hours + minutes + seconds);
 
-            assert_eq!(timestamp.year(), 1901);
-            assert_eq!(timestamp.month(), 1);
-            assert_eq!(timestamp.day_of_month(), 7);
-            assert_eq!(timestamp.hours(), 19);
-            assert_eq!(timestamp.minutes(), 45);
-            assert_eq!(timestamp.seconds(), 33);
-
-            assert_eq!(timestamp.day_of_year(), 7);
+            assert_eq!(actual, expected);
         }
 
         #[test]
@@ -678,64 +951,60 @@ mod tests {
             let seconds = 59;
 
             let timestamp = Timestamp::from_u64(year + month + day + hours + minutes + seconds);
+            let expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(1904, 2, 29).unwrap(),
+                time: Time::new(23, 59, 59).unwrap(),
+            })
+            .unwrap();
 
-            assert_eq!(timestamp.year(), 1904);
-            assert_eq!(timestamp.month(), 2);
-            assert_eq!(timestamp.day_of_month(), 29);
-            assert_eq!(timestamp.hours(), 23);
-            assert_eq!(timestamp.minutes(), 59);
-            assert_eq!(timestamp.seconds(), 59);
-
-            assert_eq!(timestamp.day_of_year(), 60);
+            assert_eq!(timestamp, expected);
 
             let next_timestamp = Timestamp::from_u64(timestamp.as_u64() + 1);
+            let next_expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(1904, 3, 1).unwrap(),
+                time: Time::new(0, 0, 0).unwrap(),
+            })
+            .unwrap();
 
-            assert_eq!(next_timestamp.year(), 1904);
-            assert_eq!(next_timestamp.month(), 3);
-            assert_eq!(next_timestamp.day_of_month(), 1);
-            assert_eq!(next_timestamp.hours(), 0);
-            assert_eq!(next_timestamp.minutes(), 0);
-            assert_eq!(next_timestamp.seconds(), 0);
+            assert_eq!(next_timestamp, next_expected);
 
-            assert_eq!(next_timestamp.day_of_year(), 61);
+            assert!(next_timestamp > timestamp);
         }
 
         #[test]
         fn test_2023_06_28() {
-            let timestamp = Timestamp::from_u64(3896899200);
+            let expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(2023, 6, 28).unwrap(),
+                time: Time::new(0, 0, 0).unwrap(),
+            })
+            .unwrap();
+            let actual = Timestamp::from_u64(3896899200);
 
-            assert_eq!(timestamp.year(), 2023);
-            assert_eq!(timestamp.month(), 6);
-            assert_eq!(timestamp.day_of_month(), 28);
-            assert_eq!(timestamp.hours(), 0);
-            assert_eq!(timestamp.minutes(), 0);
-            assert_eq!(timestamp.seconds(), 0);
+            assert_eq!(actual, expected);
         }
 
         #[test]
         fn test_1985_07_01() {
-            let timestamp = Timestamp::from_u64(2698012800);
+            let expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(1985, 7, 1).unwrap(),
+                time: Time::new(0, 0, 0).unwrap(),
+            })
+            .unwrap();
+            let actual = Timestamp::from_u64(2698012800);
 
-            assert_eq!(timestamp.year(), 1985);
-            assert_eq!(timestamp.month(), 7);
-            assert_eq!(timestamp.day_of_month(), 1);
-            assert_eq!(timestamp.hours(), 0);
-            assert_eq!(timestamp.minutes(), 0);
-            assert_eq!(timestamp.seconds(), 0);
+            assert_eq!(actual, expected);
         }
 
         #[test]
         fn test_2017_01_01() {
-            let timestamp = Timestamp::from_u64(3692217600);
+            let expected = Timestamp::from_date_time(DateTime {
+                date: Date::new(2017, 1, 1).unwrap(),
+                time: Time::new(0, 0, 0).unwrap(),
+            })
+            .unwrap();
+            let actual = Timestamp::from_u64(3692217600);
 
-            assert_eq!(timestamp.year(), 2017);
-            assert_eq!(timestamp.month(), 1);
-            assert_eq!(timestamp.day_of_month(), 1);
-            assert_eq!(timestamp.hours(), 0);
-            assert_eq!(timestamp.minutes(), 0);
-            assert_eq!(timestamp.seconds(), 0);
-
-            assert_eq!(timestamp.day_of_year(), 1);
+            assert_eq!(actual, expected);
         }
     }
 }
