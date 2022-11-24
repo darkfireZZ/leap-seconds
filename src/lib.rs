@@ -25,8 +25,6 @@
 
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
-// TODO disallow these lints
-#![allow(clippy::cast_possible_truncation)]
 // TODO enable these lints
 // #![warn(clippy::cargo)]
 // #![warn(missing_docs)]
@@ -78,12 +76,12 @@ pub enum ParseFileError {
     },
 }
 
-const SECONDS_PER_MINUTE: u64 = 60;
-const MINUTES_PER_HOUR: u64 = 60;
-const HOURS_PER_DAY: u64 = 24;
+const SECONDS_PER_MINUTE: u8 = 60;
+const MINUTES_PER_HOUR: u8 = 60;
+const HOURS_PER_DAY: u8 = 24;
 
-const SECONDS_PER_HOUR: u64 = MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
-const SECONDS_PER_DAY: u64 = HOURS_PER_DAY * SECONDS_PER_HOUR;
+const SECONDS_PER_HOUR: u64 = (MINUTES_PER_HOUR as u64) * (SECONDS_PER_MINUTE as u64);
+const SECONDS_PER_DAY: u64 = (HOURS_PER_DAY as u64) * SECONDS_PER_HOUR;
 
 const JANUARY: u8 = 1;
 const FEBRUARY: u8 = 2;
@@ -249,11 +247,11 @@ impl Time {
     /// assert!(error.is_err());
     /// ```
     pub fn new(hours: u8, minutes: u8, seconds: u8) -> Result<Self, InvalidTime> {
-        if hours >= (HOURS_PER_DAY as u8) {
+        if hours >= HOURS_PER_DAY {
             Err(InvalidTime::HoursOutOfRange(hours))
-        } else if minutes >= (MINUTES_PER_HOUR as u8) {
+        } else if minutes >= MINUTES_PER_HOUR {
             Err(InvalidTime::MinutesOutOfRange(minutes))
-        } else if seconds >= (SECONDS_PER_MINUTE as u8) {
+        } else if seconds >= SECONDS_PER_MINUTE {
             Err(InvalidTime::SecondsOutOfRange(seconds))
         } else {
             Ok(Time {
@@ -311,7 +309,7 @@ impl Time {
 
     const fn total_seconds(self) -> u64 {
         (self.hours as u64) * SECONDS_PER_HOUR
-            + (self.minutes as u64) * SECONDS_PER_MINUTE
+            + (self.minutes as u64) * (SECONDS_PER_MINUTE as u64)
             + (self.seconds as u64)
     }
 }
@@ -452,6 +450,7 @@ impl Timestamp {
         let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100); // [0, 365]
 
         let mp = (5 * day_of_year + 2) / 153; // [0, 11]
+        #[allow(clippy::cast_possible_truncation)]
         let day = (day_of_year - (153 * mp + 2) / 5 + 1) as u8; // [1, 31]
         let month = (mp % 12) as u8; // [1, 12]
         let year = year + (month <= 2) as u64;
@@ -460,15 +459,24 @@ impl Timestamp {
     }
 
     const fn hours(self) -> u8 {
-        (self.total_hours() % HOURS_PER_DAY) as u8
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            (self.total_hours() % (HOURS_PER_DAY as u64)) as u8
+        }
     }
 
     const fn minutes(self) -> u8 {
-        (self.total_minutes() % MINUTES_PER_HOUR) as u8
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            (self.total_minutes() % (MINUTES_PER_HOUR as u64)) as u8
+        }
     }
 
     const fn seconds(self) -> u8 {
-        (self.total_seconds() % SECONDS_PER_MINUTE) as u8
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            (self.total_seconds() % (SECONDS_PER_MINUTE as u64)) as u8
+        }
     }
 
     const fn total_seconds(self) -> u64 {
@@ -476,7 +484,7 @@ impl Timestamp {
     }
 
     const fn total_minutes(self) -> u64 {
-        self.value / SECONDS_PER_MINUTE
+        self.value / (SECONDS_PER_MINUTE as u64)
     }
 
     const fn total_hours(self) -> u64 {
