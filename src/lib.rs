@@ -618,21 +618,40 @@ fn parse_timestamp(timestamp: LineBorrow<'_>) -> Result<Timestamp, ParseLineErro
     Ok(Timestamp::from_u64(timestamp))
 }
 
+/// A SHA-1 hash.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Sha1Hash {
-    value: [u8; 20],
+    bytes: [u8; 20],
 }
 
 impl Sha1Hash {
-    fn from_array(array: [u8; 20]) -> Self {
-        Self { value: array }
+    fn from_bytes(array: [u8; 20]) -> Self {
+        Self { bytes: array }
+    }
+
+    /// Converts a [`Sha1Hash`] to a byte array.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 20] {
+        &self.bytes
+    }
+
+    /// Converts a [`Sha1Hash`] to a byte array.
+    #[must_use]
+    pub const fn into_bytes(self) -> [u8; 20] {
+        self.bytes
+    }
+}
+
+impl From<Sha1Hash> for [u8; 20] {
+    fn from(hash: Sha1Hash) -> Self {
+        hash.into_bytes()
     }
 }
 
 impl Display for Sha1Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let to_string = self
-            .value
+            .bytes
             .iter()
             .map(|byte| format!("{byte:0>2x}"))
             .collect::<String>();
@@ -662,7 +681,7 @@ fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
         line_number: hash.number,
     })?;
 
-    Ok(Sha1Hash::from_array(hash))
+    Ok(Sha1Hash::from_bytes(hash))
 }
 
 fn parse_leap_second_lines(
@@ -713,7 +732,7 @@ fn calculate_hash<'a>(
         hasher.update(chunk.content.as_bytes());
     }
 
-    Sha1Hash::from_array(hasher.finalize().into())
+    Sha1Hash::from_bytes(hasher.finalize().into())
 }
 
 fn parse_tai_diff(tai_diff: LineBorrow<'_>) -> Result<u16, ParseLineError> {
