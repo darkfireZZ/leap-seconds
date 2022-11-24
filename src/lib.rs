@@ -96,6 +96,10 @@ const OCTOBER: u8 = 10;
 const NOVEMBER: u8 = 11;
 const DECEMBER: u8 = 12;
 
+const DAYS_PER_ERA: u64 = 365 * 400 + 100 - 4 + 1;
+const DAYS_BETWEEN_1900_01_01_AND_0000_03_01: u64 =
+    1900 * 365 + (1900 / 400) - (1900 / 100) + (1900 / 4) + 1 - 60;
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum InvalidDate {
     #[error("day out of range: {0}")]
@@ -191,18 +195,20 @@ impl Date {
         self.year
     }
 
-    fn seconds_since_1900(self) -> u64 {
-        let mut days = u64::from(self.day) - 1;
+    const fn days_since_1900(self) -> u64 {
+        // Credits to Howard Hinnant for the algorithm:
+        // https://howardhinnant.github.io/date_algorithms.html (last accessed 2022-11-24)
 
-        for month in JANUARY..self.month {
-            days += u64::from(days_in_month(month, self.year));
-        }
+        let month = self.month as u64;
+        let day = self.day as u64;
 
-        for year in 1900..self.year {
-            days += days_in_year(year);
-        }
+        let year = self.year - (month <= 2) as u64;
+        let era = year / 400;
+        let year_of_era = year - era * 400; // [0, 399]
+        let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1; // [0, 365]
+        let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year; // [0, 146096]
 
-        days * SECONDS_PER_DAY
+        era * DAYS_PER_ERA + day_of_era - DAYS_BETWEEN_1900_01_01_AND_0000_03_01
     }
 }
 
@@ -324,14 +330,6 @@ const fn is_leap_year(year: u64) -> bool {
     (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))
 }
 
-const fn days_in_year(year: u64) -> u64 {
-    if is_leap_year(year) {
-        366
-    } else {
-        365
-    }
-}
-
 const fn days_in_month(month: u8, year: u64) -> u8 {
     match month {
         JANUARY | MARCH | MAY | JULY | AUGUST | OCTOBER | DECEMBER => 31,
@@ -390,7 +388,7 @@ impl Timestamp {
             && (date_time <= Self::MAX_REPRESENTABLE_DATE_TIME)
         {
             Ok(Timestamp::from_u64(
-                date_time.date.seconds_since_1900() + date_time.time.total_seconds(),
+                date_time.date.days_since_1900() * SECONDS_PER_DAY + date_time.time.total_seconds(),
             ))
         } else {
             Err(DateTimeNotRepresentable(date_time))
@@ -434,14 +432,8 @@ impl Timestamp {
         // Credits to Howard Hinnant for the algorithm:
         // https://howardhinnant.github.io/date_algorithms.html (last accessed 2022-11-24)
 
-        const DAYS_PER_ERA: u64 = 365 * 400 + 100 - 4 + 1;
-        const REF_YEAR: u64 = 1900;
-        const DIFF: u64 =
-            REF_YEAR * 365 + (REF_YEAR / 400) - (REF_YEAR / 100) + (REF_YEAR / 4) + 1 - 60;
-
         let days_since_1900_01_01 = self.total_days();
-
-        let days_since_0000_03_01 = days_since_1900_01_01 + DIFF;
+        let days_since_0000_03_01 = days_since_1900_01_01 + DAYS_BETWEEN_1900_01_01_AND_0000_03_01;
         let era = days_since_0000_03_01 / DAYS_PER_ERA;
         let day_of_era = days_since_0000_03_01 % DAYS_PER_ERA; // [0, 146096]
         let year_of_era =

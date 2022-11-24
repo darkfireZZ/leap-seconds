@@ -3,7 +3,6 @@ mod timestamp {
     use proptest::prelude::*;
 
     proptest! {
-        #[ignore]
         #[test]
         fn from_and_to_date_time(timestamp in 0..u64::MAX) {
             let timestamp = Timestamp::from_u64(timestamp);
