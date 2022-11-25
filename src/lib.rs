@@ -32,9 +32,12 @@
 use {
     core::fmt::{self, Display},
     sha1::{Digest, Sha1},
-    std::io::{self, BufRead},
-    thiserror::Error,
+    std::io::BufRead,
 };
+
+pub use errors::*;
+
+pub mod errors;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataComponent {
@@ -53,27 +56,6 @@ impl Display for DataComponent {
 
         write!(f, "{result}")
     }
-}
-
-#[derive(Debug, Error)]
-pub enum ParseFileError {
-    #[error(transparent)]
-    IoError(#[from] io::Error),
-    #[error(transparent)]
-    ParseLineError(#[from] ParseLineError),
-    #[error("incorrect hash: calculated = {calculated}, found = {found}")]
-    InvalidHash {
-        calculated: Sha1Hash,
-        found: Sha1Hash,
-    },
-    #[error("missing data: {0}")]
-    MissingData(DataComponent),
-    #[error("duplicate data on lines {line1} and {line2}: {data_component}")]
-    DuplicateData {
-        data_component: DataComponent,
-        line1: usize,
-        line2: usize,
-    },
 }
 
 const SECONDS_PER_MINUTE: u8 = 60;
@@ -99,14 +81,6 @@ const DECEMBER: u8 = 12;
 const DAYS_PER_ERA: u64 = 365 * 400 + 100 - 4 + 1;
 const DAYS_BETWEEN_1900_01_01_AND_0000_03_01: u64 =
     1900 * 365 + (1900 / 400) - (1900 / 100) + (1900 / 4) + 1 - 60;
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum InvalidDate {
-    #[error("day out of range: {0}")]
-    MonthOutOfRange(u8),
-    #[error("month out of range: {0}")]
-    DayOutOfRange(u8),
-}
 
 /// A date.
 ///
@@ -210,16 +184,6 @@ impl Date {
 
         era * DAYS_PER_ERA + day_of_era - DAYS_BETWEEN_1900_01_01_AND_0000_03_01
     }
-}
-
-#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
-pub enum InvalidTime {
-    #[error("hours out of range: {0}")]
-    HoursOutOfRange(u8),
-    #[error("minutes out of range: {0}")]
-    MinutesOutOfRange(u8),
-    #[error("seconds out of range: {0}")]
-    SecondsOutOfRange(u8),
 }
 
 /// A time.
@@ -354,15 +318,6 @@ const fn days_in_month(month: u8, year: u64) -> u8 {
         }
         // TODO this is terrible code, improve this
         _ => u8::MAX, // _ => unreachable!("invalid month")
-    }
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub struct DateTimeNotRepresentable(DateTime);
-
-impl Display for DateTimeNotRepresentable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DateTime is not representable as 64-bit timestamp")
     }
 }
 
@@ -576,44 +531,6 @@ impl LeapSecond {
     #[must_use]
     pub const fn tai_diff(self) -> u16 {
         self.tai_diff
-    }
-}
-
-#[derive(Debug, Error)]
-pub struct ParseLineError {
-    kind: ParseLineErrorKind,
-    line: String,
-    line_number: usize,
-}
-
-impl Display for ParseLineError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} on line {}: \"{}\"",
-            self.kind, self.line_number, self.line
-        )
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ParseLineErrorKind {
-    InvalidTimestamp,
-    InvalidLeapSecondLine,
-    InvalidTaiDiff,
-    InvalidHash,
-}
-
-impl Display for ParseLineErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let output = match self {
-            Self::InvalidTimestamp => "invalid timestamp",
-            Self::InvalidLeapSecondLine => "invalid leapsecond line",
-            Self::InvalidTaiDiff => "invalid TAI difference",
-            Self::InvalidHash => "invalid hash",
-        };
-
-        write!(f, "{output}")
     }
 }
 
