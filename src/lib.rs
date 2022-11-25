@@ -320,9 +320,14 @@ impl Time {
     }
 }
 
+/// A [`Date`] and a [`Time`].
+///
+/// That's literally what it is, nothing more to see here.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct DateTime {
+    /// The [`Date`] of the [`DateTime`].
     pub date: Date,
+    /// The [`Time`] of the [`DateTime`].
     pub time: Time,
 }
 
