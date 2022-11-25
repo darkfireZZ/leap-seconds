@@ -28,20 +28,45 @@ pub enum ParseFileError {
     },
 }
 
+/// Indicates an attempt to create an invalid [`Date`](crate::Date).
+///
+/// ```
+/// use leap_seconds::{Date, InvalidDate};
+///
+/// // November only has 30 days
+/// let error = Date::new(2000, 11, 31);
+///
+/// assert_eq!(error, Err(InvalidDate::DayOutOfRange(31)));
+/// ```
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum InvalidDate {
+    /// Indicates that the day was out of range.
     #[error("day out of range: {0}")]
     MonthOutOfRange(u8),
+    /// Indicates that the month was out of range.
     #[error("month out of range: {0}")]
     DayOutOfRange(u8),
 }
 
+/// Indicates and attempt to create an invalid [`Time`](crate::Time).
+///
+/// ```
+/// use leap_seconds::{Time, InvalidTime};
+///
+/// // A time with 60 seconds is invalid
+/// let error = Time::new(18, 42, 60);
+///
+/// assert_eq!(error, Err(InvalidTime::SecondsOutOfRange(60)));
+/// ```
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum InvalidTime {
+    /// Indicates that the hours were out of range.
     #[error("hours out of range: {0}")]
     HoursOutOfRange(u8),
+    /// Indicates that the minutes were out of range.
     #[error("minutes out of range: {0}")]
     MinutesOutOfRange(u8),
+    /// Indicates that the seconds were out of range.
     #[error("seconds out of range: {0}")]
     SecondsOutOfRange(u8),
 }
