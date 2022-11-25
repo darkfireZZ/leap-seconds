@@ -326,6 +326,12 @@ pub struct DateTime {
     pub time: Time,
 }
 
+impl From<Timestamp> for DateTime {
+    fn from(timestamp: Timestamp) -> Self {
+        timestamp.date_time()
+    }
+}
+
 const fn is_leap_year(year: u64) -> bool {
     (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))
 }
@@ -540,6 +546,13 @@ impl From<u64> for Timestamp {
 impl From<Timestamp> for u64 {
     fn from(timestamp: Timestamp) -> u64 {
         timestamp.as_u64()
+    }
+}
+
+impl TryFrom<DateTime> for Timestamp {
+    type Error = DateTimeNotRepresentable;
+    fn try_from(date_time: DateTime) -> Result<Self, Self::Error> {
+        Self::from_date_time(date_time)
     }
 }
 
