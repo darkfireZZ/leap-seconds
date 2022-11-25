@@ -364,7 +364,44 @@ pub struct Timestamp {
 }
 
 impl Timestamp {
+    /// The maximum [`DateTime`] that can be represented as [`Timestamp`].
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// use leap_seconds::{Date, DateTime, Time, Timestamp};
+    ///
+    /// let alt_max_1 = DateTime {
+    ///     date: Date::new(584_554_051_153, 11, 9)?,
+    ///     time: Time::new(7, 0, 15)?,
+    /// };
+    ///
+    /// let alt_max_2 = Timestamp::from_u64(u64::MAX).date_time();
+    ///
+    /// assert_eq!(Timestamp::MAX_REPRESENTABLE_DATE_TIME, alt_max_1);
+    /// assert_eq!(Timestamp::MAX_REPRESENTABLE_DATE_TIME, alt_max_2);
+    /// #
+    /// # Ok::<(), Box<dyn Error>>(())
+    /// ```
     pub const MAX_REPRESENTABLE_DATE_TIME: DateTime = Self::from_u64(u64::MAX).date_time();
+
+    /// The minimum [`DateTime`] that can be represented as [`Timestamp`].
+    ///
+    /// ```
+    /// # use std::error::Error;
+    /// use leap_seconds::{Date, DateTime, Time, Timestamp};
+    ///
+    /// let alt_min_1 = DateTime {
+    ///     date: Date::new(1900, 1, 1)?,
+    ///     time: Time::new(0, 0, 0)?,
+    /// };
+    ///
+    /// let alt_min_2 = Timestamp::from_u64(0).date_time();
+    ///
+    /// assert_eq!(Timestamp::MIN_REPRESENTABLE_DATE_TIME, alt_min_1);
+    /// assert_eq!(Timestamp::MIN_REPRESENTABLE_DATE_TIME, alt_min_2);
+    /// #
+    /// # Ok::<(), Box<dyn Error>>(())
+    /// ```
     pub const MIN_REPRESENTABLE_DATE_TIME: DateTime = Self::from_u64(0).date_time();
 
     /// Creates a new [`Timestamp`] from a [`DateTime`].
