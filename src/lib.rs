@@ -516,6 +516,19 @@ impl TryFrom<DateTime> for Timestamp {
     }
 }
 
+/// A leap second as read from a `leap-seconds.list` file.
+///
+/// Consists of...
+///  - ... a [`Timestamp`] of the date the leap second is introduced. The leap second is added to
+///    (or removed from) the end of the previous day.
+///
+///    Here is some more information on leap seconds: <https://en.wikipedia.org/wiki/leap_second>.
+///
+///  - ... a [`u16`] indicating the updated time difference (in seconds) between
+///    [UTC] and [TAI].
+///
+/// [UTC]: https://en.wikipedia.org/wiki/Coordinated_Universal_Time
+/// [TAI]: https://en.wikipedia.org/wiki/International_Atomic_Time
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeapSecond {
     timestamp: Timestamp,
@@ -523,11 +536,16 @@ pub struct LeapSecond {
 }
 
 impl LeapSecond {
+    /// Gets the [`Timestamp`] of the date this leap second was introduced.
     #[must_use]
     pub const fn timestamp(self) -> Timestamp {
         self.timestamp
     }
 
+    /// Gets the difference between [UTC] and [TAI] as of the introduction of this leap second.
+    ///
+    /// [UTC]: https://en.wikipedia.org/wiki/Coordinated_Universal_Time
+    /// [TAI]: https://en.wikipedia.org/wiki/International_Atomic_Time
     #[must_use]
     pub const fn tai_diff(self) -> u16 {
         self.tai_diff
