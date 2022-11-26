@@ -838,11 +838,10 @@ fn extract_content_lines<R: BufRead>(file: R) -> Result<ContentLines, ParseFileE
         }
     }
 
-    let last_update =
-        last_update.ok_or_else(|| ParseFileError::MissingData(DataComponent::LastUpdate))?;
-    let expiration_date = expiration_date
-        .ok_or_else(|| ParseFileError::MissingData(DataComponent::ExpirationDate))?;
-    let hash = hash.ok_or_else(|| ParseFileError::MissingData(DataComponent::Hash))?;
+    let last_update = last_update.ok_or(ParseFileError::MissingData(DataComponent::LastUpdate))?;
+    let expiration_date =
+        expiration_date.ok_or(ParseFileError::MissingData(DataComponent::ExpirationDate))?;
+    let hash = hash.ok_or(ParseFileError::MissingData(DataComponent::Hash))?;
 
     Ok(ContentLines {
         last_update,
