@@ -71,13 +71,45 @@ pub enum InvalidTime {
     SecondsOutOfRange(u8),
 }
 
+/// Occurs if a [`DateTime`] is not representable as a [`Timestamp`].
+///
+/// See [`Timestamp::MAX_REPRESENTABLE_DATE_TIME`] and [`Timestamp::MIN_REPRESENTABLE_DATE_TIME`]
+/// for the latest and the earliest [`DateTime`] respectively that can be represented as a
+/// [`Timestamp`].
+///
+/// ```
+/// # use std::error::Error;
+/// use leap_seconds::{
+///     Date, DateTime, Time, Timestamp,
+///     errors::DateTimeNotRepresentable,
+/// };
+///
+/// let date_time = DateTime {
+///     date: Date::new(1234, 5, 6)?,
+///     time: Time::new(7, 8, 9)?,
+/// };
+///
+/// let error: DateTimeNotRepresentable = Timestamp::from_date_time(date_time).unwrap_err();
+/// assert_eq!(error.date_time(), date_time);
+/// #
+/// # Ok::<(), Box<dyn Error>>(())
+/// ```
+///
+/// [`Timestamp`]: crate::Timestamp
+/// [`Timestamp::MAX_REPRESENTABLE_DATE_TIME`]: crate::Timestamp::MAX_REPRESENTABLE_DATE_TIME
+/// [`Timestamp::MIN_REPRESENTABLE_DATE_TIME`]: crate::Timestamp::MIN_REPRESENTABLE_DATE_TIME
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub struct DateTimeNotRepresentable(pub(crate) DateTime);
+pub struct DateTimeNotRepresentable {
+    pub(crate) date_time: DateTime,
+}
 
 impl DateTimeNotRepresentable {
+    /// Gets the [`DateTime`] that could not be represented as a [`Timestamp`].
+    ///
+    /// [`Timestamp`]: crate::Timestamp
     #[must_use]
-    pub fn date_time(self) -> DateTime {
-        self.0
+    pub const fn date_time(self) -> DateTime {
+        self.date_time
     }
 }
 

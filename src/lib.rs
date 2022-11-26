@@ -394,7 +394,7 @@ impl Timestamp {
                 date_time.date.days_since_1900() * SECONDS_PER_DAY + date_time.time.total_seconds(),
             ))
         } else {
-            Err(DateTimeNotRepresentable(date_time))
+            Err(DateTimeNotRepresentable { date_time })
         }
     }
 
