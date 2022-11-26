@@ -157,11 +157,22 @@ impl Display for ParseLineError {
     }
 }
 
+/// Reasons that could cause a line to not be parsed successfully.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ParseLineErrorKind {
+    /// A timestamp is incorrectly formatted.
     InvalidTimestamp,
+
+    /// A line describing a leap second is incorrectly formatted.
     InvalidLeapSecondLine,
+
+    /// The [TAI]-[UTC] difference on a line describing a leap second is incorrectly formatted.
+    ///
+    /// [TAI]: https://en.wikipedia.org/wiki/International_Atomic_Time
+    /// [UTC]: https://en.wikipedia.org/wiki/Coordinated_Universal_Time
     InvalidTaiDiff,
+
+    /// The line containing the hash of the data is incorrectly formatted.
     InvalidHash,
 }
 
