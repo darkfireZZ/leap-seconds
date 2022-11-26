@@ -8,5 +8,6 @@ sha1 = { version = "0.10.5" }
 thiserror = { version = "1.0.37", default-features = false }
 
 [dev-dependencies]
+chrono = { version = "0.4.23", default-features = false, features = ["clock"] }
 proptest = { version = "1.0.0" }
 reqwest = { version = "0.11.13", features = ["blocking"] }

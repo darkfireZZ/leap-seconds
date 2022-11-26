@@ -48,7 +48,7 @@
 use {
     core::fmt::{self, Display},
     sha1::{Digest, Sha1},
-    std::io::BufRead,
+    std::{io::BufRead, time::SystemTime},
 };
 
 pub use errors::*;
@@ -77,7 +77,12 @@ const DECEMBER: u8 = 12;
 
 const DAYS_PER_ERA: u64 = 365 * 400 + 100 - 4 + 1;
 const DAYS_BETWEEN_1900_01_01_AND_0000_03_01: u64 =
-    1900 * 365 + (1900 / 400) - (1900 / 100) + (1900 / 4) + 1 - 60;
+    1900 * 365 + (1900 / 400) - (1900 / 100) + (1900 / 4) - 31 - 28;
+
+#[allow(clippy::identity_op)]
+const DAYS_BETWEEN_1900_01_01_AND_1970_01_01: u64 = 70 * 365 + (70 / 400) - (70 / 100) + (70 / 4);
+const SECONDS_BETWEEN_1900_01_01_AND_1970_01_01: u64 =
+    DAYS_BETWEEN_1900_01_01_AND_1970_01_01 * SECONDS_PER_DAY;
 
 /// A date.
 ///
@@ -400,6 +405,19 @@ impl Timestamp {
     #[must_use]
     pub const fn from_u64(value: u64) -> Self {
         Self { value }
+    }
+
+    /// Returns the current time as [`Timestamp`].
+    #[must_use]
+    pub fn now() -> Self {
+        let secs_since_unix_epoch = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("now is later than the unix epoch")
+            .as_secs();
+        let secs_since_1900_01_01 =
+            secs_since_unix_epoch + SECONDS_BETWEEN_1900_01_01_AND_1970_01_01;
+
+        Timestamp::from_u64(secs_since_1900_01_01)
     }
 
     /// Gets the integer representation of this [`Timestamp`].
@@ -966,7 +984,29 @@ mod tests {
     }
 
     mod timestamp {
-        use crate::{Date, DateTime, Time, Timestamp};
+        use {
+            crate::{Date, DateTime, Time, Timestamp},
+            chrono::{offset::Utc, Datelike, Timelike},
+        };
+
+        #[test]
+        fn now() {
+            let expected = {
+                let now = Utc::now();
+                let date = now.date_naive();
+                let time = now.time();
+
+                DateTime {
+                    date: Date::new(date.year() as u64, date.month() as u8, date.day() as u8)
+                        .expect("chrono produces valid dates"),
+                    time: Time::new(time.hour() as u8, time.minute() as u8, time.second() as u8)
+                        .expect("chrono produces valid times"),
+                }
+            };
+            let actual = Timestamp::now().date_time();
+
+            assert_eq!(actual, expected);
+        }
 
         #[test]
         fn from_and_to_date_time_0() {
