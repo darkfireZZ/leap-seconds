@@ -47,8 +47,8 @@ jobs:
         components: rustfmt
     - run: cargo fmt --check
     
-  doc:
-    name: doc
+  rustdoc:
+    name: rustdoc
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
