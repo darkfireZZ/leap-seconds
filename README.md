@@ -11,7 +11,8 @@ few:
  - TZDB (from GitHub): <https://raw.githubusercontent.com/eggert/tz/main/leap-seconds.list>
  - Meinberg: <https://www.meinberg.de/download/ntp/leap-seconds.list>
 
-For more information & examples have a look at the documentation.
+For more information & examples have a look at the documentation:
+<https://docs.rs/leap-seconds/latest/leap_seconds>
 
 ## License
 
