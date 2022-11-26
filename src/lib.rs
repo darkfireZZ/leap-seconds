@@ -45,6 +45,9 @@
 //! // get the next leap second that will be introduced
 //! let next_leap_second = leap_seconds_list.next_leap_second();
 //!
+//! // get an ordered slice of all future leap seconds currently announced
+//! let future_leap_seconds = leap_seconds_list.planned_leap_seconds();
+//!
 //! // get an ordered slice of all leap seconds that have been introduced since 1970
 //! let all_leap_seconds = leap_seconds_list.leap_seconds();
 //!
@@ -954,16 +957,33 @@ impl LeapSecondsList {
         self.leap_seconds
     }
 
+    /// Gets all the leap seconds introduced after a given [`Timestamp`].
+    #[must_use]
+    pub fn leap_seconds_after(&self, timestamp: Timestamp) -> &[LeapSecond] {
+        // this is possible because the self.leap_seconds is sorted by timestamp
+        let start_index = self
+            .leap_seconds()
+            .iter()
+            .enumerate()
+            .find(|(_, leap_second)| leap_second.timestamp() > timestamp)
+            .map_or_else(|| self.leap_seconds().len(), |(index, _)| index);
+
+        &self.leap_seconds()[start_index..]
+    }
+
+    /// Gets all the leap seconds that are planned in the future.
+    #[must_use]
+    pub fn planned_leap_seconds(&self) -> &[LeapSecond] {
+        self.leap_seconds_after(Timestamp::now())
+    }
+
     /// Gets the next [`LeapSecond`] after a given [`Timestamp`].
     ///
     /// Returns [`None`] if the list doesn't contain any leap seconds after the [`Timestamp`].
     #[must_use]
     pub fn next_leap_second_after(&self, timestamp: Timestamp) -> Option<LeapSecond> {
         // this is possible because the self.leap_seconds is sorted by timestamp
-        self.leap_seconds
-            .iter()
-            .find(|leap_second| leap_second.timestamp() > timestamp)
-            .copied()
+        self.leap_seconds_after(timestamp).first().copied()
     }
 
     /// Gets the next [`LeapSecond`] that will be introduced.
@@ -1039,6 +1059,15 @@ mod tests {
             });
             let actual = leap_seconds_list.next_leap_second_after(Timestamp::from_u64(2918937600));
             assert_eq!(actual, expected);
+
+            // there should be no leap seconds after the last one
+            let last_leap_second = leap_seconds_list
+                .leap_seconds()
+                .last()
+                .expect("list contains at least 1 element");
+            assert!(leap_seconds_list
+                .leap_seconds_after(last_leap_second.timestamp())
+                .is_empty());
         }
     }
 
