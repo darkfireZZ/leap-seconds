@@ -8,7 +8,6 @@
 //!  - TZDB (from IANA): <https://data.iana.org/time-zones/tzdb/leap-seconds.list>
 //!  - TZDB (from GitHub): <https://raw.githubusercontent.com/eggert/tz/main/leap-seconds.list>
 //!  - Meinberg: <https://www.meinberg.de/download/ntp/leap-seconds.list>
-//!  - NIST: <ftp://time.nist.gov/pub/leap-seconds.list>
 //!
 //! It is recommended that you get the file from the [IERS] as they are responsible for announcing
 //! leap seconds. Consequently, they will most likely provide the most up to date version of the
@@ -35,20 +34,6 @@
 //! let file = reqwest::blocking::get("https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list")
 //!         .unwrap();
 //! let leap_seconds_list = LeapSecondsList::new(BufReader::new(file)).unwrap();
-//!
-//! # use leap_seconds::Timestamp;
-//! #
-//! # let min_expiration_date = Timestamp::from_u64(3896899200);
-//! # assert!(leap_seconds_list.expiration_date() >= min_expiration_date);
-//! #
-//! # let min_last_update = Timestamp::from_u64(3676924800);
-//! # assert!(leap_seconds_list.last_update() >= min_last_update);
-//! #
-//! # let first_leap_second = &leap_seconds_list.leap_seconds()[0];
-//! # let expected_timestamp = Timestamp::from_u64(2272060800);
-//! # let expected_tai_diff = 10;
-//! # assert_eq!(first_leap_second.timestamp(), expected_timestamp);
-//! # assert_eq!(first_leap_second.tai_diff(), expected_tai_diff);
 //! ```
 //!
 //! [IERS]: https://www.iers.org
@@ -929,6 +914,54 @@ mod proptests;
 
 #[cfg(test)]
 mod tests {
+    mod crate_doc_file_sources {
+        use {
+            crate::{LeapSecondsList, Timestamp},
+            std::io::BufReader,
+        };
+
+        #[test]
+        fn iers() {
+            test_source("https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list")
+        }
+
+        #[test]
+        fn tzdb_iana() {
+            test_source("https://data.iana.org/time-zones/tzdb/leap-seconds.list")
+        }
+
+        #[test]
+        fn tzdb_github() {
+            test_source("https://raw.githubusercontent.com/eggert/tz/main/leap-seconds.list")
+        }
+
+        #[test]
+        fn meinberg() {
+            test_source("https://www.meinberg.de/download/ntp/leap-seconds.list")
+        }
+
+        fn test_source(url: &str) {
+            let file = reqwest::blocking::get(url).unwrap();
+            let leap_seconds_list =
+                LeapSecondsList::new(BufReader::new(file)).expect("parsing should be successful");
+
+            // expiration date will always be >= the expiration date at the time of writing
+            let min_expiration_date = Timestamp::from_u64(3896899200);
+            assert!(leap_seconds_list.expiration_date() >= min_expiration_date);
+
+            // last update will always be >= the expiration date at the time of writing
+            let min_last_update = Timestamp::from_u64(3676924800);
+            assert!(leap_seconds_list.last_update() >= min_last_update);
+
+            // first leap second will always be the same
+            let first_leap_second = &leap_seconds_list.leap_seconds()[0];
+            let expected_timestamp = Timestamp::from_u64(2272060800);
+            let expected_tai_diff = 10;
+            assert_eq!(first_leap_second.timestamp(), expected_timestamp);
+            assert_eq!(first_leap_second.tai_diff(), expected_tai_diff);
+        }
+    }
+
     mod timestamp {
         use crate::{Date, DateTime, Time, Timestamp};
 
