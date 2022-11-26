@@ -25,9 +25,9 @@
 
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
+#![warn(missing_docs)]
 // TODO enable these lints
 // #![warn(clippy::cargo)]
-// #![warn(missing_docs)]
 
 use {
     core::fmt::{self, Display},
@@ -38,25 +38,6 @@ use {
 pub use errors::*;
 
 pub mod errors;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DataComponent {
-    LastUpdate,
-    ExpirationDate,
-    Hash,
-}
-
-impl Display for DataComponent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let result = match self {
-            Self::LastUpdate => "last update",
-            Self::ExpirationDate => "expiration date",
-            Self::Hash => "hash",
-        };
-
-        write!(f, "{result}")
-    }
-}
 
 const SECONDS_PER_MINUTE: u8 = 60;
 const MINUTES_PER_HOUR: u8 = 60;

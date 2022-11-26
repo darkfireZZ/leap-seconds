@@ -1,11 +1,38 @@
 //! Contains all error-related functionality of the crate.
 
 use {
-    crate::{DataComponent, DateTime, Sha1Hash},
+    crate::{DateTime, Sha1Hash},
     core::fmt::{self, Display},
     std::io,
     thiserror::Error,
 };
+
+/// Data that is required to exist exactly once in a `leap-seconds.list` file.
+///
+/// If that is not the case, an attempt to parse the file will result in a [`ParseFileError`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DataComponent {
+    /// A line containing a timestamp when the file was updated last.
+    LastUpdate,
+
+    /// A timestamp at which the data in the file expires.
+    ExpirationDate,
+
+    /// A hash of the data contained in the file.
+    Hash,
+}
+
+impl Display for DataComponent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result = match self {
+            Self::LastUpdate => "last update",
+            Self::ExpirationDate => "expiration date",
+            Self::Hash => "hash",
+        };
+
+        write!(f, "{result}")
+    }
+}
 
 /// Indicates that a `leap-seconds.list` file could not be parsed successfully.
 #[derive(Debug, Error)]
