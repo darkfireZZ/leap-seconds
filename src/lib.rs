@@ -60,9 +60,8 @@
 
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
+#![warn(clippy::cargo)]
 #![warn(missing_docs)]
-// TODO enable these lints
-// #![warn(clippy::cargo)]
 
 use {
     core::fmt::{self, Display},

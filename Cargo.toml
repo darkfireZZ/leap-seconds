@@ -2,6 +2,11 @@
 name = "leap-seconds"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/darkfireZZ/leap-seconds"
+description = "A leap seconds library - realized as a `leap-seconds.list` parser"
+license = "MIT OR Apache-2.0"
+keywords = ["date", "time", "parser", "parsing", "ntp"]
+categories = ["date-and-time", "parsing"]
 
 [dependencies]
 sha1 = { version = "0.10.5" }
