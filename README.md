@@ -1,7 +1,17 @@
 
 # leap-seconds
 
-TODO add documentation
+This crate provides a means of accessing current leap second data in rust.
+
+This is achieved through a parser that can read and provide access to the data in a
+`leap-seconds.list` file. A copy of this file can be obtained from various sources. To name a
+few:
+ - IERS: <https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list>
+ - TZDB (from IANA): <https://data.iana.org/time-zones/tzdb/leap-seconds.list>
+ - TZDB (from GitHub): <https://raw.githubusercontent.com/eggert/tz/main/leap-seconds.list>
+ - Meinberg: <https://www.meinberg.de/download/ntp/leap-seconds.list>
+
+For more information & examples have a look at the documentation.
 
 ## License
 
