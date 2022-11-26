@@ -24,16 +24,21 @@
 //!
 //! **Get a copy of `leap-seconds.list`:**
 //!
-//! [reqwest] is used in this example, but any other HTTP library or a local file would work just
-//! as well.
+//! [reqwest] is used in this example, but any other HTTP library or a local file will work just as
+//! well.
 //!
 //! ```
 //! use leap_seconds::LeapSecondsList;
 //! use std::io::BufReader;
 //!
+//! // get the file from the IERS
 //! let file = reqwest::blocking::get("https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list")
 //!         .unwrap();
+//! // parse the file
 //! let leap_seconds_list = LeapSecondsList::new(BufReader::new(file)).unwrap();
+//!
+//! // make sure the file is up to date
+//! assert!(!leap_seconds_list.is_expired());
 //! ```
 //!
 //! [IERS]: https://www.iers.org
@@ -858,7 +863,10 @@ impl ContentLines {
 
 /// Provides access to the data in `leap-seconds.list`.
 ///
-/// See the [crate-level documentation](crate) for examples.
+/// **IMPORTANT:** If you don't want to use outdated data, check [`LeapSecondsList::is_expired()`] before using a
+/// [`LeapSecondsList`].
+///
+/// For examples see the [crate-level documentation](crate).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LeapSecondsList {
     last_update: Timestamp,
@@ -905,6 +913,12 @@ impl LeapSecondsList {
         })
     }
 
+    /// Returns whether this [`LeapSecondsList`] is expired.
+    #[must_use]
+    pub fn is_expired(&self) -> bool {
+        self.expiration_date() <= Timestamp::now()
+    }
+
     /// Gets the last time the file was updated.
     #[must_use]
     pub const fn last_update(&self) -> Timestamp {
@@ -945,7 +959,8 @@ impl LeapSecondsList {
     ///
     /// Returns [`None`] if a next leap second been announced.
     ///
-    /// Equivalent to `self.[next_leap_second_after](Timestamp::now())`.
+    /// Equivalent to calling [`LeapSecondsList::next_leap_second_after()`] with
+    /// [`Timestamp::now()`].
     #[must_use]
     pub fn next_leap_second(&self) -> Option<LeapSecond> {
         self.next_leap_second_after(Timestamp::now())
@@ -987,6 +1002,9 @@ mod tests {
             let file = reqwest::blocking::get(url).unwrap();
             let leap_seconds_list =
                 LeapSecondsList::new(BufReader::new(file)).expect("parsing should be successful");
+
+            // file shouldn't be expired
+            assert!(!leap_seconds_list.is_expired());
 
             // expiration date will always be >= the expiration date at the time of writing
             let min_expiration_date = Timestamp::from_u64(3896899200);
