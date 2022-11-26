@@ -1,4 +1,3 @@
-// TODO add more examples to quickstart
 //! This crate provides a means of accessing current leap second data.
 //!
 //! This is achieved through a parser that can read and provide access to the data in a
@@ -22,14 +21,14 @@
 //!
 //! # Quickstart
 //!
-//! **Get a copy of `leap-seconds.list`:**
-//!
 //! [reqwest] is used in this example, but any other HTTP library or a local file will work just as
 //! well.
 //!
 //! ```
 //! use leap_seconds::LeapSecondsList;
 //! use std::io::BufReader;
+//!
+//! // ======= fetching & parsing the file ======= //
 //!
 //! // get the file from the IERS
 //! let file = reqwest::blocking::get("https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list")
@@ -38,7 +37,19 @@
 //! let leap_seconds_list = LeapSecondsList::new(BufReader::new(file)).unwrap();
 //!
 //! // make sure the file is up to date
+//! // you should always do this unless you don't mind working with outdated data
 //! assert!(!leap_seconds_list.is_expired());
+//!
+//! // ======= some things that are possible ======= //
+//!
+//! // get the next leap second that will be introduced
+//! let next_leap_second = leap_seconds_list.next_leap_second();
+//!
+//! // get an ordered slice of all leap seconds that have been introduced since 1970
+//! let all_leap_seconds = leap_seconds_list.leap_seconds();
+//!
+//! // get the last time the `leap-seconds.list` file was updated
+//! let last_update = leap_seconds_list.last_update();
 //! ```
 //!
 //! [IERS]: https://www.iers.org
