@@ -407,7 +407,7 @@ impl Timestamp {
         Self { value }
     }
 
-    /// Returns the current time as [`Timestamp`].
+    /// Returns the current time.
     #[must_use]
     pub fn now() -> Self {
         let secs_since_unix_epoch = SystemTime::now()
@@ -928,6 +928,28 @@ impl LeapSecondsList {
     pub fn into_leap_seconds(self) -> Vec<LeapSecond> {
         self.leap_seconds
     }
+
+    /// Gets the next [`LeapSecond`] after a given [`Timestamp`].
+    ///
+    /// Returns [`None`] if the list doesn't contain any leap seconds after the [`Timestamp`].
+    #[must_use]
+    pub fn next_leap_second_after(self, timestamp: Timestamp) -> Option<LeapSecond> {
+        // this is possible because the self.leap_seconds is sorted by timestamp
+        self.leap_seconds
+            .iter()
+            .find(|leap_second| leap_second.timestamp() > timestamp)
+            .copied()
+    }
+
+    /// Gets the next [`LeapSecond`] that will be introduced.
+    ///
+    /// Returns [`None`] if a next leap second been announced.
+    ///
+    /// Equivalent to `self.[next_leap_second_after](Timestamp::now())`.
+    #[must_use]
+    pub fn next_leap_second(self) -> Option<LeapSecond> {
+        self.next_leap_second_after(Timestamp::now())
+    }
 }
 
 #[cfg(test)]
@@ -937,7 +959,7 @@ mod proptests;
 mod tests {
     mod crate_doc_file_sources {
         use {
-            crate::{LeapSecondsList, Timestamp},
+            crate::{LeapSecond, LeapSecondsList, Timestamp},
             std::io::BufReader,
         };
 
@@ -980,6 +1002,14 @@ mod tests {
             let expected_tai_diff = 10;
             assert_eq!(first_leap_second.timestamp(), expected_timestamp);
             assert_eq!(first_leap_second.tai_diff(), expected_tai_diff);
+
+            // next leap second
+            let expected = Some(LeapSecond {
+                timestamp: Timestamp::from_u64(2950473600),
+                tai_diff: 28,
+            });
+            let actual = leap_seconds_list.next_leap_second_after(Timestamp::from_u64(2918937600));
+            assert_eq!(actual, expected);
         }
     }
 
