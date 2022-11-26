@@ -739,7 +739,7 @@ fn parse_tai_diff(tai_diff: LineBorrow<'_>) -> Result<u16, ParseLineError> {
 fn parse_leap_seconds<'a>(
     leap_second_lines: &[(LineBorrow<'a>, LineBorrow<'a>)],
 ) -> Result<Vec<LeapSecond>, ParseLineError> {
-    leap_second_lines
+    let mut leap_seconds = leap_second_lines
         .iter()
         .map(|(timestamp, tai_diff)| {
             Ok(LeapSecond {
@@ -747,7 +747,11 @@ fn parse_leap_seconds<'a>(
                 tai_diff: parse_tai_diff(*tai_diff)?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    leap_seconds.sort_by(|t1, t2| t1.timestamp.cmp(&t2.timestamp));
+
+    Ok(leap_seconds)
 }
 
 fn set_option(
@@ -834,7 +838,6 @@ impl ContentLines {
     }
 }
 
-// TODO ordered leap seconds list
 /// Provides access to the data in `leap-seconds.list`.
 ///
 /// See the [crate-level documentation](crate) for examples.
@@ -896,13 +899,13 @@ impl LeapSecondsList {
         self.expiration_date
     }
 
-    /// Gets the leap second list from the file.
+    /// Gets the leap second list from the file, ordered by introduction timestamp.
     #[must_use]
     pub fn leap_seconds(&self) -> &[LeapSecond] {
         &self.leap_seconds
     }
 
-    /// Gets the leap second list from the file.
+    /// Gets the leap second list from the file, ordered by introduction timestamp.
     #[must_use]
     pub fn into_leap_seconds(self) -> Vec<LeapSecond> {
         self.leap_seconds
