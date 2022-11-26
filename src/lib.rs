@@ -1,12 +1,40 @@
-// TODO add module-level documentation
+// TODO add more examples to quickstart
+//! This crate provides a means of accessing current leap second data.
+//!
+//! This is achieved through a parser that can read and provide access to the data in a
+//! `leap-seconds.list` file. A copy of this file can be obtained from various sources. To name a
+//! few:
+//!  - IERS: <https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list>
+//!  - TZDB (from IANA): <https://data.iana.org/time-zones/tzdb/leap-seconds.list>
+//!  - TZDB (from GitHub): <https://raw.githubusercontent.com/eggert/tz/main/leap-seconds.list>
+//!  - Meinberg: <https://www.meinberg.de/download/ntp/leap-seconds.list>
+//!  - NIST: <ftp://time.nist.gov/pub/leap-seconds.list>
+//!
+//! It is recommended that you get the file from the [IERS] as they are responsible for announcing
+//! leap seconds. Consequently, they will most likely provide the most up to date version of the
+//! file.
+//!
+//! You do not need to have any knowledge of the structure or contents of the `leap-seconds.list`
+//! file in order to use this crate. However, if you want to know more about `leap-seconds.list`,
+//! here's an article from Meinberg on the matter:
+//!
+//! <https://kb.meinbergglobal.com/kb/time_sync/ntp/configuration/ntp_leap_second_file> (last
+//! accessed 2022-11-26)
+//!
+//! # Quickstart
+//!
+//! **Get a copy of `leap-seconds.list`:**
+//!
+//! [reqwest] is used in this example, but any other HTTP library or a local file would work just
+//! as well.
+//!
 //! ```
 //! use leap_seconds::LeapSecondsList;
 //! use std::io::BufReader;
 //!
-//! let file = reqwest::blocking::get("https://data.iana.org/time-zones/tzdb/leap-seconds.list")
+//! let file = reqwest::blocking::get("https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list")
 //!         .unwrap();
-//! let file = BufReader::new(file);
-//! let leap_seconds_list = LeapSecondsList::from_file(file).unwrap();
+//! let leap_seconds_list = LeapSecondsList::new(BufReader::new(file)).unwrap();
 //!
 //! # use leap_seconds::Timestamp;
 //! #
@@ -22,6 +50,9 @@
 //! # assert_eq!(first_leap_second.timestamp(), expected_timestamp);
 //! # assert_eq!(first_leap_second.tai_diff(), expected_tai_diff);
 //! ```
+//!
+//! [IERS]: https://www.iers.org
+//! [reqwest]: https://crates.io/crates/reqwest
 
 #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
@@ -669,23 +700,28 @@ fn parse_leap_second_lines(
             let leap_second = leap_second.trim();
 
             let leap_second = leap_second
-                .split_once(|c: char| c.is_ascii_whitespace())
-                .ok_or_else(|| ParseLineError {
+                .split(|c: char| c.is_ascii_whitespace())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>();
+
+            if leap_second.len() == 2 {
+                Ok((
+                    LineBorrow {
+                        content: leap_second[0],
+                        number: line.number,
+                    },
+                    LineBorrow {
+                        content: leap_second[1],
+                        number: line.number,
+                    },
+                ))
+            } else {
+                Err(ParseLineError {
                     cause: ParseLineErrorKind::InvalidLeapSecondLine,
                     line: line.content.clone(),
                     line_number: line.number,
-                })?;
-
-            Ok((
-                LineBorrow {
-                    content: leap_second.0,
-                    number: line.number,
-                },
-                LineBorrow {
-                    content: leap_second.1,
-                    number: line.number,
-                },
-            ))
+                })
+            }
         })
         .collect::<Result<Vec<_>, _>>()
 }
@@ -813,6 +849,7 @@ impl ContentLines {
     }
 }
 
+// TODO ordered leap seconds list
 /// Provides access to the data in `leap-seconds.list`.
 ///
 /// See the [crate-level documentation](crate) for examples.
@@ -831,7 +868,7 @@ impl LeapSecondsList {
     /// If the given `leap-seconds.list` could not be parsed successfully.
     ///
     /// See [`ParseFileError`] for more information on what each error variant means.
-    pub fn from_file<R: BufRead>(file: R) -> Result<Self, ParseFileError> {
+    pub fn new<R: BufRead>(file: R) -> Result<Self, ParseFileError> {
         let content_lines = extract_content_lines(file)?;
 
         let last_update = content_lines.last_update();
