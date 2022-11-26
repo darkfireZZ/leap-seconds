@@ -297,8 +297,9 @@ const fn days_in_month(month: u8, year: u64) -> u8 {
                 28
             }
         }
-        // TODO this is terrible code, improve this
-        _ => u8::MAX, // _ => unreachable!("invalid month")
+        // This should be unreachable!, but unreachable! is not yet const, so this is the best I
+        // can do right now.
+        _ => panic!("invalid month"),
     }
 }
 
@@ -728,7 +729,6 @@ fn parse_leap_seconds<'a>(
         .collect()
 }
 
-// TODO choose better names for everything in this function
 fn set_option(
     option: &Option<Line>,
     to: Line,
