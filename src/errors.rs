@@ -7,23 +7,40 @@ use {
     thiserror::Error,
 };
 
+/// Indicates that a `leap-seconds.list` file could not be parsed successfully.
 #[derive(Debug, Error)]
 pub enum ParseFileError {
+    /// An IO error occurred in the underlying stream.
     #[error(transparent)]
     IoError(#[from] io::Error),
+
+    /// A line in the file could not be parsed successfully.
+    ///
+    /// See [`ParseLineError`] for further information.
     #[error(transparent)]
     ParseLineError(#[from] ParseLineError),
+
+    /// The hash that was calculated did not match the one that was found in the file.
     #[error("incorrect hash: calculated = {calculated}, found = {found}")]
     InvalidHash {
+        /// The hash that was calculated from the contents of the file.
         calculated: Sha1Hash,
+        /// The hash that was found in the file.
         found: Sha1Hash,
     },
+
+    /// The given file is incomplete. Required data could not be found in the file.
     #[error("missing data: {0}")]
     MissingData(DataComponent),
+
+    /// The file contains duplicate data.
     #[error("duplicate data on lines {line1} and {line2}: {data_component}")]
     DuplicateData {
+        /// The type of data that was found twice.
         data_component: DataComponent,
+        /// The first line the data was found on.
         line1: usize,
+        /// The second line the data was found on.
         line2: usize,
     },
 }
