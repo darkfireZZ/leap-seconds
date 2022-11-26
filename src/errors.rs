@@ -119,11 +119,32 @@ impl Display for DateTimeNotRepresentable {
     }
 }
 
+/// The error that occurs when a line of a `leap-seconds.list` file could not be parsed.
 #[derive(Debug, Error)]
 pub struct ParseLineError {
-    pub(crate) kind: ParseLineErrorKind,
+    pub(crate) cause: ParseLineErrorKind,
     pub(crate) line: String,
     pub(crate) line_number: usize,
+}
+
+impl ParseLineError {
+    /// Gets what caused this error.
+    #[must_use]
+    pub const fn cause(&self) -> ParseLineErrorKind {
+        self.cause
+    }
+
+    /// Gets the line that caused this error.
+    #[must_use]
+    pub fn line(&self) -> &str {
+        &self.line
+    }
+
+    /// Gets the line number at which this error occured.
+    #[must_use]
+    pub const fn line_number(&self) -> usize {
+        self.line_number
+    }
 }
 
 impl Display for ParseLineError {
@@ -131,7 +152,7 @@ impl Display for ParseLineError {
         write!(
             f,
             "{} on line {}: \"{}\"",
-            self.kind, self.line_number, self.line
+            self.cause, self.line_number, self.line
         )
     }
 }

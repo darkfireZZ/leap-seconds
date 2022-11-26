@@ -600,7 +600,7 @@ fn parse_timestamp(timestamp: LineBorrow<'_>) -> Result<Timestamp, ParseLineErro
         .content
         .parse::<u64>()
         .map_err(|_| ParseLineError {
-            kind: ParseLineErrorKind::InvalidTimestamp,
+            cause: ParseLineErrorKind::InvalidTimestamp,
             line: timestamp.content.to_owned(),
             line_number: timestamp.number,
         })?;
@@ -655,7 +655,7 @@ fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
         .split_ascii_whitespace()
         .map(|word| {
             u32::from_str_radix(word, 16).map_err(|_| ParseLineError {
-                kind: ParseLineErrorKind::InvalidHash,
+                cause: ParseLineErrorKind::InvalidHash,
                 line: hash.content.to_owned(),
                 line_number: hash.number,
             })
@@ -666,7 +666,7 @@ fn parse_hash(hash: LineBorrow) -> Result<Sha1Hash, ParseLineError> {
         .collect::<Vec<_>>();
 
     let hash = TryInto::<[u8; 20]>::try_into(hash_vec).map_err(|_| ParseLineError {
-        kind: ParseLineErrorKind::InvalidHash,
+        cause: ParseLineErrorKind::InvalidHash,
         line: hash.content.to_owned(),
         line_number: hash.number,
     })?;
@@ -689,7 +689,7 @@ fn parse_leap_second_lines(
             let leap_second = leap_second
                 .split_once(|c: char| c.is_ascii_whitespace())
                 .ok_or_else(|| ParseLineError {
-                    kind: ParseLineErrorKind::InvalidLeapSecondLine,
+                    cause: ParseLineErrorKind::InvalidLeapSecondLine,
                     line: line.content.clone(),
                     line_number: line.number,
                 })?;
@@ -727,7 +727,7 @@ fn calculate_hash<'a>(
 
 fn parse_tai_diff(tai_diff: LineBorrow<'_>) -> Result<u16, ParseLineError> {
     tai_diff.content.parse::<u16>().map_err(|_| ParseLineError {
-        kind: ParseLineErrorKind::InvalidTaiDiff,
+        cause: ParseLineErrorKind::InvalidTaiDiff,
         line: tai_diff.content.to_owned(),
         line_number: tai_diff.number,
     })
