@@ -933,7 +933,7 @@ impl LeapSecondsList {
     ///
     /// Returns [`None`] if the list doesn't contain any leap seconds after the [`Timestamp`].
     #[must_use]
-    pub fn next_leap_second_after(self, timestamp: Timestamp) -> Option<LeapSecond> {
+    pub fn next_leap_second_after(&self, timestamp: Timestamp) -> Option<LeapSecond> {
         // this is possible because the self.leap_seconds is sorted by timestamp
         self.leap_seconds
             .iter()
@@ -947,7 +947,7 @@ impl LeapSecondsList {
     ///
     /// Equivalent to `self.[next_leap_second_after](Timestamp::now())`.
     #[must_use]
-    pub fn next_leap_second(self) -> Option<LeapSecond> {
+    pub fn next_leap_second(&self) -> Option<LeapSecond> {
         self.next_leap_second_after(Timestamp::now())
     }
 }
