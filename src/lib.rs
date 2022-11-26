@@ -114,8 +114,8 @@ impl Date {
     /// let error = Date::new(7_777_777, 2, 29);
     /// assert!(error.is_err());
     /// ```
-    pub fn new(year: u64, month: u8, day: u8) -> Result<Self, InvalidDate> {
-        if !(1..=12).contains(&month) {
+    pub const fn new(year: u64, month: u8, day: u8) -> Result<Self, InvalidDate> {
+        if month > 12 || month < 1 {
             Err(InvalidDate::MonthOutOfRange(month))
         } else if day < 1 || day > days_in_month(month, year) {
             Err(InvalidDate::DayOutOfRange(day))
@@ -615,7 +615,7 @@ pub struct Sha1Hash {
 }
 
 impl Sha1Hash {
-    fn from_bytes(array: [u8; 20]) -> Self {
+    const fn from_bytes(array: [u8; 20]) -> Self {
         Self { bytes: array }
     }
 
@@ -883,13 +883,13 @@ impl LeapSecondsList {
 
     /// Gets the last time the file was updated.
     #[must_use]
-    pub fn last_update(&self) -> Timestamp {
+    pub const fn last_update(&self) -> Timestamp {
         self.last_update
     }
 
     /// Gets the expiration date of the file.
     #[must_use]
-    pub fn expiration_date(&self) -> Timestamp {
+    pub const fn expiration_date(&self) -> Timestamp {
         self.expiration_date
     }
 
